@@ -1,0 +1,976 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#46178f">
+<title>Blitz Quiz</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2346178f'/%3E%3Cpath d='M18 4 8 18h7l-2 10 10-14h-7z' fill='%23ffd400'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;700;800;900&display=swap" rel="stylesheet">
+<script src="vendor/peerjs.min.js"></script>
+<script src="vendor/qrcode.js"></script>
+<style>
+:root{--purple:#46178f;--purple2:#2f0f63;--red:#e21b3c;--blue:#1368ce;--yellow:#d89e00;--green:#26890c;--ink:#2b2b2b;--bg:#f2f2f2;--muted:#6b6b6b}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%;font-family:Montserrat,system-ui,-apple-system,Segoe UI,sans-serif;color:var(--ink);background:var(--bg);-webkit-tap-highlight-color:transparent}
+button{font:inherit;cursor:pointer;border:0;touch-action:manipulation;color:inherit;background:none}
+input,textarea,select{font:inherit;color:inherit}
+h1{font-weight:900;margin:0 0 16px}
+.screen{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column}
+.purple{color:#fff;background:radial-gradient(circle at 12% 18%,rgba(255,255,255,.07) 0 140px,transparent 141px),radial-gradient(circle at 88% 80%,rgba(255,255,255,.06) 0 220px,transparent 221px),radial-gradient(circle at 70% 10%,rgba(0,0,0,.08) 0 90px,transparent 91px),var(--purple)}
+.center{align-items:center;justify-content:center;padding:24px;text-align:center}
+.logo{font-weight:900;font-size:clamp(44px,10vw,80px);letter-spacing:-2px;margin-bottom:28px;line-height:1}
+.logo b,.brand b{color:#ffd400;font-weight:900}
+.card{background:#fff;color:var(--ink);border-radius:8px;padding:16px;box-shadow:0 4px 0 rgba(0,0,0,.18)}
+.stack{display:flex;flex-direction:column;gap:10px}
+.join{width:min(340px,100%)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;background:#fff;color:var(--ink);padding:11px 18px;border-radius:6px;font-weight:800;box-shadow:inset 0 -4px 0 rgba(0,0,0,.18);transition:transform .05s;white-space:nowrap}
+.btn:active:not(:disabled){transform:translateY(2px);box-shadow:inset 0 -2px 0 rgba(0,0,0,.18)}
+.btn.dark{background:#333;color:#fff}.btn.primary{background:var(--purple);color:#fff}.btn.green{background:var(--green);color:#fff}.btn.redb{background:var(--red);color:#fff}.btn.gray{background:#e4e4e4}
+.btn.small{padding:8px 12px;font-size:14px;box-shadow:inset 0 -3px 0 rgba(0,0,0,.15)}
+.btn.big{padding:14px 26px;font-size:20px}
+.btn:disabled{opacity:.45;cursor:default}
+.ghost{color:#fff;font-weight:700;margin-top:22px;opacity:.9;text-decoration:underline;text-underline-offset:4px}
+.field{width:100%;padding:13px;border:2px solid #ccc;border-radius:6px;font-weight:800;font-size:20px;text-align:center;outline:none}
+.field:focus{border-color:#333}
+.muted{color:var(--muted)}.small{font-size:13px}
+.sp{flex:1}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#222;color:#fff;padding:12px 18px;border-radius:8px;font-weight:700;z-index:99;box-shadow:0 6px 20px rgba(0,0,0,.3);max-width:90vw;text-align:center;animation:pop .2s}
+@keyframes pop{from{opacity:0;transform:translate(-50%,10px)}}
+.spinner{width:44px;height:44px;border:5px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 18px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ---------- Light pages (library / editor) ---------- */
+.topbar{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:8px;padding:10px 16px;background:#fff;box-shadow:0 2px 6px rgba(0,0,0,.08);flex-wrap:wrap}
+.brand{font-weight:900;font-size:22px;color:var(--purple);letter-spacing:-.5px;padding:0}
+.brand b{color:var(--ink)}
+.wrap{width:min(960px,100%);margin:0 auto;padding:22px 16px 80px}
+.qlist{display:flex;flex-direction:column;gap:12px}
+.qitem{display:flex;align-items:center;gap:14px;background:#fff;border-radius:8px;padding:12px;box-shadow:0 2px 0 rgba(0,0,0,.08);flex-wrap:wrap}
+.thumb{width:96px;height:64px;border-radius:6px;background:var(--purple);flex:none;overflow:hidden;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:22px}
+.thumb img{width:100%;height:100%;object-fit:cover}
+.qitem .info{flex:1;min-width:160px}
+.qitem .t{font-weight:800;font-size:18px;margin-bottom:4px}
+.acts{display:flex;gap:6px;flex-wrap:wrap}
+.titlein{flex:1;min-width:160px;border:2px solid transparent;border-radius:6px;padding:8px 10px;font-weight:800;font-size:18px;background:#f4f4f4;outline:none}
+.titlein:focus{border-color:var(--purple);background:#fff}
+.qcard{background:#fff;border-radius:10px;padding:14px;margin-bottom:16px;box-shadow:0 2px 0 rgba(0,0,0,.08)}
+.qhead{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+.qnum{background:var(--purple);color:#fff;font-weight:900;border-radius:6px;min-width:34px;height:34px;display:flex;align-items:center;justify-content:center}
+.qhead select{padding:7px 8px;border-radius:6px;border:2px solid #ddd;font-weight:700;background:#fff}
+.icon{width:34px;height:34px;border-radius:6px;background:#efefef;font-weight:900;font-size:15px}
+.icon:hover:not(:disabled){background:#e2e2e2}.icon:disabled{opacity:.35;cursor:default}
+.qtext{width:100%;resize:vertical;border:2px solid #ddd;border-radius:8px;padding:12px;font-weight:800;font-size:20px;text-align:center;outline:none;min-height:64px}
+.qtext:focus{border-color:var(--purple)}
+.imgzone{margin:10px 0;border:2px dashed #ccc;border-radius:8px;min-height:120px;display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative;background:#fafafa;overflow:hidden}
+.imgzone.drag{border-color:var(--purple);background:#f1eafb}
+.imgzone.has{border-style:solid;background:#111;min-height:0}
+.imgzone img{display:block;max-width:100%;max-height:300px;margin:0 auto}
+.addimg{display:flex;flex-direction:column;align-items:center;gap:4px;color:var(--muted);font-weight:700;padding:16px}
+.addimg .plus{width:42px;height:42px;border-radius:50%;background:var(--purple);color:#fff;font-size:28px;display:flex;align-items:center;justify-content:center;line-height:1}
+.rm{position:absolute;top:8px;right:8px;width:auto;padding:0 10px;background:rgba(255,255,255,.92)}
+.eans{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
+.erow{display:flex;align-items:center;gap:8px;border-radius:8px;padding:8px;color:#fff;min-height:58px}
+.erow .shape svg{width:26px;display:block}
+.erow input{flex:1;min-width:0;border:0;border-radius:6px;padding:9px 10px;font-weight:700;background:rgba(255,255,255,.95);color:var(--ink);outline:none}
+.erow input[readonly]{background:transparent;color:#fff;font-weight:900;font-size:18px}
+.corr{width:36px;height:36px;border-radius:50%;border:3px solid #fff;flex:none;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.12)}
+.corr svg{width:20px;opacity:0}
+.corr.on{background:#26890c;border-color:#fff}.corr.on svg{opacity:1}
+.addrow{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+.errbox{background:#fde8eb;color:#9b1026;border-radius:8px;padding:12px 14px;margin-bottom:16px;font-weight:700}
+.errbox ul{margin:6px 0 0;padding-left:20px;font-weight:600}
+
+/* ---------- Answer colors / shapes ---------- */
+.c0{background:var(--red)}.c1{background:var(--blue)}.c2{background:var(--yellow)}.c3{background:var(--green)}
+
+/* ---------- Host: lobby ---------- */
+.lobby-top{display:flex;justify-content:center;padding:18px}
+.joinbox{display:flex;align-items:center;gap:22px;padding:14px 22px;flex-wrap:wrap;justify-content:center}
+.joinat{font-weight:700;font-size:18px;text-align:left;max-width:280px}
+.joinat b{display:block;font-size:20px;word-break:break-all}
+.pinbox{text-align:left}.pinbox small{font-weight:800;font-size:18px}
+.bigpin{font-weight:900;font-size:clamp(48px,7vw,84px);letter-spacing:2px;line-height:1}
+.qr svg{width:140px;height:140px;display:block}
+.lobby-bar{display:flex;align-items:center;gap:10px;padding:8px 22px;flex-wrap:wrap}
+.count{background:rgba(0,0,0,.25);border-radius:6px;padding:8px 14px;font-weight:800;font-size:18px}
+.count b{font-size:24px}
+.lobby-title{font-weight:800;font-size:20px;opacity:.9}
+.names{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;padding:24px;align-content:flex-start;flex:1}
+.chip{background:#fff;color:var(--ink);font-weight:800;font-size:20px;padding:10px 18px;border-radius:6px;animation:chipin .25s}
+.chip:hover{text-decoration:line-through;background:#ffe3e7}
+.chip.off{opacity:.45}
+@keyframes chipin{from{transform:scale(.5);opacity:0}}
+.waiting{font-weight:800;font-size:24px;opacity:.85;padding:10px}
+
+/* ---------- Host: game ---------- */
+.game{height:100vh;height:100dvh;background:#f2f2f2;overflow:hidden}
+.gtop{display:flex;align-items:center;gap:10px;padding:10px}
+.qbar{flex:1;background:#fff;border-radius:6px;padding:14px 18px;font-weight:800;font-size:clamp(18px,2.8vw,36px);text-align:center;box-shadow:0 3px 0 rgba(0,0,0,.08);white-space:pre-wrap}
+.gmid{flex:1;min-height:0;display:grid;grid-template-columns:clamp(70px,12vw,150px) 1fr clamp(70px,12vw,150px);gap:10px;padding:0 10px}
+.timer{align-self:center;justify-self:center;width:clamp(60px,9vw,120px);height:clamp(60px,9vw,120px);border-radius:50%;background:var(--purple);color:#fff;font-weight:900;font-size:clamp(26px,4vw,52px);display:flex;align-items:center;justify-content:center}
+.timer.low{background:var(--red);animation:pulse .5s infinite alternate}
+@keyframes pulse{to{transform:scale(1.07)}}
+.media{min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:6px 0}
+.media img{max-width:100%;max-height:100%;min-height:0;object-fit:contain;border-radius:6px;flex:1 1 auto}
+.multi-tag{background:#333;color:#fff;font-weight:800;padding:6px 14px;border-radius:20px;font-size:clamp(13px,1.5vw,18px)}
+.side{align-self:center;display:flex;flex-direction:column;align-items:center;gap:10px}
+.acount{text-align:center;font-weight:800}.acount b{display:block;font-size:clamp(30px,4.5vw,60px);font-weight:900;line-height:1}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:10px}
+.tile{display:flex;align-items:center;gap:14px;color:#fff;border-radius:6px;padding:12px 18px;font-weight:800;font-size:clamp(16px,2.3vw,30px);min-height:clamp(64px,13vh,130px);box-shadow:inset 0 -6px 0 rgba(0,0,0,.2);transition:opacity .3s}
+.tile svg:first-child{width:clamp(26px,3.6vw,48px);flex:none}
+.tile .ck{width:clamp(28px,3.6vw,48px);margin-left:auto;flex:none}
+.tile.dim{opacity:.28}
+.gfoot{display:flex;justify-content:space-between;padding:6px 14px 10px;font-weight:800;color:#555}
+.chart{display:flex;align-items:flex-end;justify-content:center;gap:clamp(10px,2vw,28px);height:100%;width:100%;padding:10px 0}
+.col{display:flex;flex-direction:column;justify-content:flex-end;align-items:stretch;width:clamp(60px,10vw,140px);height:100%}
+.bar{border-radius:4px 4px 0 0;min-height:6px;transition:height .6s cubic-bezier(.2,.8,.2,1);height:0}
+.lab{display:flex;align-items:center;justify-content:center;gap:6px;color:#fff;font-weight:900;font-size:clamp(16px,2.2vw,28px);padding:6px;border-radius:0 0 4px 4px}
+.lab svg{width:clamp(18px,2vw,26px)}
+.col.dim{opacity:.35}
+.getready{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;gap:24px}
+.getready .qn{font-weight:800;font-size:22px;background:rgba(0,0,0,.25);padding:8px 18px;border-radius:30px}
+.getready .gq{font-weight:900;font-size:clamp(26px,4.5vw,60px);max-width:1100px;white-space:pre-wrap}
+.prog{width:min(600px,80vw);height:10px;background:rgba(255,255,255,.25);border-radius:6px;overflow:hidden}
+.prog div{height:100%;background:#fff;width:0}
+.hostctl{position:fixed;top:10px;right:10px;display:flex;gap:6px;z-index:6}
+
+/* ---------- Host: scoreboard + podium ---------- */
+.sbhead{display:flex;align-items:center;justify-content:center;padding:22px;position:relative}
+.sbhead h1{margin:0;background:#fff;color:var(--ink);padding:10px 28px;border-radius:6px;font-size:clamp(24px,3.5vw,40px)}
+.sbhead .btn{position:absolute;right:22px}
+.sblist{display:flex;flex-direction:column;gap:12px;width:min(900px,92vw);margin:20px auto}
+.sbrow{display:flex;align-items:center;gap:14px;background:#fff;color:var(--ink);border-radius:6px;padding:16px 22px;font-weight:800;font-size:clamp(18px,2.6vw,30px);animation:slidein .4s both}
+.sbrow:first-child{background:var(--purple2);color:#fff;transform:scale(1.03)}
+.sbrow .nm{flex:1}.sbrow .rk{opacity:.6;width:36px}
+.streak{font-size:.7em;background:#ff8a00;color:#fff;border-radius:20px;padding:3px 10px}
+@keyframes slidein{from{opacity:0;transform:translateX(-30px)}}
+.podium{display:flex;align-items:flex-end;justify-content:center;gap:clamp(8px,2vw,20px);flex:1;padding:0 12px;min-height:300px}
+.pod{display:flex;flex-direction:column;align-items:center;width:clamp(100px,22vw,260px)}
+.pname{font-weight:900;font-size:clamp(18px,2.8vw,34px);background:#fff;color:var(--ink);padding:8px 14px;border-radius:6px;margin-bottom:10px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:0;animation:fadein .5s forwards}
+.pblock{width:100%;background:var(--purple2);border-radius:6px 6px 0 0;display:flex;flex-direction:column;align-items:center;padding-top:16px;gap:8px;animation:rise 1s cubic-bezier(.2,.8,.2,1) both;transform-origin:bottom}
+.medal{width:clamp(50px,7vw,84px);height:clamp(50px,7vw,84px);border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:clamp(24px,3.5vw,42px);color:#fff;border:4px solid rgba(255,255,255,.7)}
+.pscore{font-weight:900;font-size:clamp(18px,2.5vw,30px)}
+.r1 .pblock{height:clamp(200px,42vh,380px)}.r2 .pblock{height:clamp(150px,30vh,280px)}.r3 .pblock{height:clamp(110px,22vh,200px)}
+.r1 .medal{background:#d4a017}.r2 .medal{background:#9aa3ad}.r3 .medal{background:#b87333}
+.r1 .pname,.r1 .pblock{animation-delay:1.6s}.r2 .pname,.r2 .pblock{animation-delay:.8s}
+@keyframes rise{from{transform:scaleY(0)}}
+@keyframes fadein{to{opacity:1}}
+.rest{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;padding:14px}
+.rest span{background:rgba(0,0,0,.25);padding:6px 12px;border-radius:6px;font-weight:700}
+.pactions{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;padding:12px 12px 24px}
+
+/* ---------- Player ---------- */
+.pscreen{color:#fff}
+.pbar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;background:#fff;color:var(--ink);font-weight:800}
+.pbar .ptimer{background:var(--purple);color:#fff;border-radius:20px;min-width:44px;text-align:center;padding:4px 10px}
+.pbot{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:#fff;color:var(--ink);font-weight:800;padding-bottom:max(12px,env(safe-area-inset-bottom))}
+.pbot .sc{background:#333;color:#fff;border-radius:6px;padding:4px 12px}
+.pbody{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;gap:14px}
+.pbody h2{font-weight:900;font-size:clamp(28px,8vw,44px);margin:0}
+.pbody p{font-weight:700;font-size:18px;margin:0;opacity:.95}
+.pqtext{background:#fff;color:var(--ink);font-weight:800;font-size:18px;padding:12px 14px;text-align:center;white-space:pre-wrap;border-top:1px solid #eee}
+.pqtext .multi{font-size:13px;color:#fff;background:#333;display:inline-block;padding:3px 10px;border-radius:12px;margin-top:6px}
+.ptiles{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:10px;background:#f2f2f2;grid-auto-rows:1fr}
+.ptile{border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;gap:10px;font-weight:800;font-size:17px;padding:12px;position:relative;box-shadow:inset 0 -6px 0 rgba(0,0,0,.2);word-break:break-word}
+.ptile svg:first-child{width:clamp(44px,14vw,80px)}
+.ptile .ck{position:absolute;top:10px;right:10px;width:30px;display:none}
+.ptile.sel{box-shadow:inset 0 0 0 6px #fff}
+.ptile.sel .ck{display:block}
+.ptile:active{filter:brightness(.92)}
+.submit{margin:0 10px 10px}
+.ptiles-wrap{flex:1;display:flex;flex-direction:column;background:#f2f2f2}
+.pres-ok{background:#66bf39}.pres-bad{background:#f35}
+.pill{background:rgba(0,0,0,.25);border-radius:30px;padding:10px 24px;font-weight:900;font-size:24px}
+.badge{width:84px;height:84px;border-radius:50%;background:rgba(255,255,255,.25);display:flex;align-items:center;justify-content:center}
+.badge svg{width:52px}
+.rankbig{font-weight:900;font-size:64px;line-height:1}
+
+@media (max-width:700px){
+  .eans{grid-template-columns:1fr}
+  .joinbox{gap:12px}.qr svg{width:110px;height:110px}
+  .sbhead .btn{position:static;margin-left:12px}
+}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+'use strict';
+/* ================= Utilities ================= */
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const app = $('#app');
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const fmtPin = p => p.slice(0, 3) + ' ' + p.slice(3);
+const ordinal = n => { const s = ['th', 'st', 'nd', 'rd'], v = n % 100; return n + (s[(v - 20) % 10] || s[v] || s[0]); };
+const PEER_PREFIX = 'blitzquiz-v1-';
+const TIMES = [5, 10, 20, 30, 60, 90, 120, 240];
+const URLP = new URLSearchParams(location.search);
+// Optional self-hosted signaling server: ?peerhost=...&peerport=...
+const PEER_OPTS = URLP.get('peerhost') ? { host: URLP.get('peerhost'), port: +(URLP.get('peerport') || 9000), path: URLP.get('peerpath') || '/', secure: URLP.get('peersecure') === '1' } : {};
+
+const SHAPE = [
+  '<svg viewBox="0 0 32 32"><path d="M16 3.5 30 28H2z" fill="#fff"/></svg>',
+  '<svg viewBox="0 0 32 32"><path d="M16 2 30 16 16 30 2 16z" fill="#fff"/></svg>',
+  '<svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="13" fill="#fff"/></svg>',
+  '<svg viewBox="0 0 32 32"><rect x="4" y="4" width="24" height="24" fill="#fff"/></svg>'];
+const CHECK = '<svg class="ck" viewBox="0 0 24 24"><path d="M4 12.5 9.5 18 20 6.5" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const XMARK = '<svg class="ck" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round"/></svg>';
+// True/False: True = blue diamond, False = red triangle
+const slotColor = (type, i) => type === 'tf' ? (i === 0 ? 1 : 0) : i;
+
+function toast(msg, ms = 2600) {
+  $$('.toast').forEach(t => t.remove());
+  const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg;
+  document.body.appendChild(t); setTimeout(() => t.remove(), ms);
+}
+let wakeWanted = false, wakeSentinel = null;
+async function wake(on) {
+  wakeWanted = on;
+  try {
+    if (on && 'wakeLock' in navigator && !wakeSentinel) { wakeSentinel = await navigator.wakeLock.request('screen'); wakeSentinel.addEventListener('release', () => wakeSentinel = null); }
+    if (!on && wakeSentinel) { await wakeSentinel.release(); wakeSentinel = null; }
+  } catch { /* not supported */ }
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && wakeWanted) wake(true); });
+function download(name, text, type) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type }));
+  a.download = name; document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+}
+const safeName = s => (s || 'quiz').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').slice(0, 60) || 'quiz';
+function messageScreen(title, body = '', actions = '') {
+  app.innerHTML = `<div class="screen purple center"><div class="logo" style="font-size:40px">Blitz<b>Quiz</b></div>
+    <div class="pbody" style="flex:none"><h2>${title}</h2>${body ? `<p>${body}</p>` : ''}</div>
+    <div class="pactions">${actions}</div></div>`;
+}
+function loadingScreen(text) {
+  app.innerHTML = `<div class="screen purple center"><div class="spinner"></div><div style="font-weight:800;font-size:20px">${esc(text)}</div></div>`;
+}
+
+/* ================= Storage (IndexedDB) ================= */
+const DB = {
+  db: null,
+  open() {
+    if (this.db) return Promise.resolve(this.db);
+    return new Promise((res, rej) => {
+      const r = indexedDB.open('blitzquiz', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('quizzes', { keyPath: 'id' });
+      r.onsuccess = () => res(this.db = r.result);
+      r.onerror = () => rej(r.error);
+    });
+  },
+  async run(mode, fn) {
+    const db = await this.open();
+    return new Promise((res, rej) => {
+      const t = db.transaction('quizzes', mode); const req = fn(t.objectStore('quizzes'));
+      t.oncomplete = () => res(req ? req.result : undefined);
+      t.onerror = () => rej(t.error); t.onabort = () => rej(t.error || new Error('Storage aborted'));
+    });
+  },
+  all() { return this.run('readonly', s => s.getAll()); },
+  get(id) { return this.run('readonly', s => s.get(id)); },
+  put(q) { return this.run('readwrite', s => s.put(q)); },
+  del(id) { return this.run('readwrite', s => s.delete(id)); },
+};
+
+/* ================= Quiz model ================= */
+function newQuestion(type = 'mc') {
+  return { id: uid(), text: '', image: null, type, time: type === 'tf' ? 10 : 20,
+    answers: type === 'tf' ? [{ text: 'True', correct: true }, { text: 'False', correct: false }] : [0, 1, 2, 3].map(() => ({ text: '', correct: false })) };
+}
+const newQuiz = () => ({ id: uid(), title: '', updated: Date.now(), questions: [newQuestion()] });
+function playable(q) {
+  const slots = q.answers.map(a => (a.text || '').trim() || null);
+  const correct = q.answers.map((a, i) => a.correct && slots[i] != null ? i : -1).filter(i => i >= 0);
+  return { text: (q.text || '').trim(), image: q.image, type: q.type, time: q.time, slots, correct, multi: correct.length > 1 };
+}
+function validate(quiz) {
+  const errs = [];
+  if (!quiz.questions.length) errs.push('Add at least one question.');
+  quiz.questions.forEach((q, i) => {
+    const p = playable(q), n = `Question ${i + 1}`;
+    if (!p.text && !p.image) errs.push(`${n}: add question text or an image.`);
+    if (p.slots.filter(Boolean).length < 2) errs.push(`${n}: needs at least 2 answers.`);
+    if (!p.correct.length) errs.push(`${n}: mark at least one correct answer.`);
+  });
+  return errs;
+}
+function normalizeQuiz(raw) {
+  raw = raw && raw.quiz ? raw.quiz : raw;
+  if (!raw || !Array.isArray(raw.questions)) throw new Error('That file is not a Blitz Quiz export.');
+  return {
+    id: uid(), title: String(raw.title || 'Imported quiz').slice(0, 120), updated: Date.now(),
+    questions: raw.questions.map(q => {
+      const type = q.type === 'tf' ? 'tf' : 'mc', base = newQuestion(type), ans = Array.isArray(q.answers) ? q.answers : [];
+      return { id: uid(), text: String(q.text || ''), image: typeof q.image === 'string' && q.image.startsWith('data:image/') ? q.image : null,
+        type, time: TIMES.includes(+q.time) ? +q.time : 20,
+        answers: base.answers.map((a, j) => ({ text: type === 'tf' ? a.text : String(ans[j]?.text || ''), correct: !!ans[j]?.correct })) };
+    }),
+  };
+}
+const SAMPLE = { title: 'Sample: World Trivia', questions: [
+  { text: 'What is the capital of Australia?', type: 'mc', time: 20, answers: [{ text: 'Sydney' }, { text: 'Canberra', correct: true }, { text: 'Melbourne' }, { text: 'Perth' }] },
+  { text: 'The Great Wall of China is visible from the Moon with the naked eye.', type: 'tf', time: 10, answers: [{}, { correct: true }] },
+  { text: 'Which of these are planets in our solar system?', type: 'mc', time: 30, answers: [{ text: 'Mars', correct: true }, { text: 'Pluto' }, { text: 'Jupiter', correct: true }, { text: 'The Sun' }] },
+] };
+function compressImage(file, max = 1280, quality = 0.85) {
+  return new Promise((res, rej) => {
+    if (!file || !/^image\//.test(file.type || 'image/')) return rej(new Error('Please choose an image file'));
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = () => {
+      const s = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+      const w = Math.round(img.naturalWidth * s), h = Math.round(img.naturalHeight * s);
+      const c = document.createElement('canvas'); c.width = w; c.height = h;
+      const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, w, h); x.drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url); res(c.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); rej(new Error("Couldn't read that image")); };
+    img.src = url;
+  });
+}
+
+/* ================= Home ================= */
+function showHome(prefill = '') {
+  wake(false);
+  let rejoin = null;
+  try { rejoin = JSON.parse(sessionStorage.getItem('bq-session') || 'null'); } catch { }
+  app.innerHTML = `
+  <div class="screen purple center">
+    <div class="logo">Blitz<b>Quiz</b></div>
+    <form class="card stack join" id="pinForm" autocomplete="off">
+      <input class="field" id="pin" inputmode="numeric" placeholder="Game PIN" maxlength="7" value="${esc(prefill)}">
+      <button class="btn dark big" type="submit">Enter</button>
+    </form>
+    ${rejoin ? `<button class="btn" id="rejoin" style="margin-top:14px">Rejoin ${esc(fmtPin(rejoin.pin))} as ${esc(rejoin.name)}</button>` : ''}
+    <button class="ghost" id="toHost">Create or host a quiz →</button>
+  </div>`;
+  $('#pinForm').onsubmit = e => {
+    e.preventDefault();
+    const pin = $('#pin').value.replace(/\D/g, '');
+    if (pin.length !== 6) return toast('Enter the 6-digit game PIN');
+    playerConnect(pin);
+  };
+  if (rejoin) $('#rejoin').onclick = () => playerConnect(rejoin.pin, rejoin.name);
+  $('#toHost').onclick = () => showLibrary();
+  if (!prefill) $('#pin').focus();
+}
+
+/* ================= Library ================= */
+async function showLibrary() {
+  wake(false);
+  let quizzes = [];
+  try {
+    quizzes = await DB.all();
+    if (!quizzes.length && !localStorage.getItem('bq-seeded')) {
+      const s = normalizeQuiz(SAMPLE); await DB.put(s); quizzes = [s]; localStorage.setItem('bq-seeded', '1');
+    }
+  } catch (e) { toast('Storage unavailable: ' + e.message); }
+  quizzes.sort((a, b) => b.updated - a.updated);
+  app.innerHTML = `
+  <div class="screen">
+    <header class="topbar">
+      <button class="brand" id="home">Blitz<b>Quiz</b></button><div class="sp"></div>
+      <button class="btn small gray" id="imp">Import</button>
+      <button class="btn small primary" id="new">+ New quiz</button>
+    </header>
+    <main class="wrap">
+      <h1>My quizzes</h1>
+      ${quizzes.length ? '' : '<p class="muted">No quizzes yet. Create one to get started.</p>'}
+      <div class="qlist">
+      ${quizzes.map(q => {
+        const img = q.questions.find(x => x.image)?.image;
+        return `<div class="qitem" data-id="${q.id}">
+          <div class="thumb">${img ? `<img src="${img}" alt="">` : q.questions.length}</div>
+          <div class="info"><div class="t">${esc(q.title || 'Untitled quiz')}</div>
+          <div class="muted small">${q.questions.length} question${q.questions.length === 1 ? '' : 's'} · edited ${new Date(q.updated).toLocaleDateString()}</div></div>
+          <div class="acts">
+            <button class="btn small green" data-act="host">Host</button>
+            <button class="btn small gray" data-act="edit">Edit</button>
+            <button class="btn small gray" data-act="export">Export</button>
+            <button class="btn small gray" data-act="del">Delete</button>
+          </div></div>`;
+      }).join('')}
+      </div>
+      <p class="muted small" style="margin-top:28px">Quizzes are saved in this browser. Use Export to back them up or move them to another computer.</p>
+    </main>
+    <input type="file" id="impFile" accept=".json,application/json" hidden>
+  </div>`;
+  $('#home').onclick = () => showHome();
+  $('#new').onclick = () => showEditor(null);
+  $('#imp').onclick = () => $('#impFile').click();
+  $('#impFile').onchange = async e => {
+    const f = e.target.files[0]; if (!f) return;
+    try { const q = normalizeQuiz(JSON.parse(await f.text())); await DB.put(q); toast(`Imported "${q.title}"`); showLibrary(); }
+    catch (err) { toast(err.message || 'Import failed'); }
+  };
+  $('.qlist').onclick = async e => {
+    const b = e.target.closest('[data-act]'); if (!b) return;
+    const id = b.closest('.qitem').dataset.id, quiz = await DB.get(id);
+    if (!quiz) return;
+    const act = b.dataset.act;
+    if (act === 'edit') showEditor(id);
+    else if (act === 'host') {
+      const errs = validate(quiz);
+      if (errs.length) { toast('Fix this quiz before hosting'); return showEditor(id, errs); }
+      hostStart(quiz);
+    } else if (act === 'export') {
+      download(safeName(quiz.title) + '.blitzquiz.json', JSON.stringify({ format: 'blitzquiz', version: 1, quiz }), 'application/json');
+    } else if (act === 'del') {
+      if (confirm(`Delete "${quiz.title || 'Untitled quiz'}"? This can't be undone.`)) { await DB.del(id); showLibrary(); }
+    }
+  };
+}
+
+/* ================= Editor ================= */
+let ED = null;
+async function showEditor(id, errs) {
+  wake(false);
+  let quiz = id ? await DB.get(id) : null;
+  if (!quiz) { quiz = newQuiz(); await DB.put(quiz); }
+  ED = { quiz, saveT: null, errs: errs || null };
+  renderEditor();
+  if (!id) setTimeout(() => $('#title')?.focus(), 50);
+}
+function setSaveState(t) { const el = $('#saveState'); if (el) el.textContent = t; }
+function saveSoon() {
+  ED.quiz.updated = Date.now(); setSaveState('Saving…');
+  clearTimeout(ED.saveT);
+  ED.saveT = setTimeout(saveNow, 400);
+}
+async function saveNow() {
+  clearTimeout(ED.saveT);
+  try { await DB.put(ED.quiz); setSaveState('Saved'); }
+  catch (e) { setSaveState('Not saved'); toast('Save failed: ' + (e.message || e)); }
+}
+function qCard(q, i, n) {
+  const nCorrect = q.answers.filter(a => a.correct).length;
+  const hint = q.type === 'tf' ? 'Tap the check to mark the correct answer.'
+    : nCorrect > 1 ? `Multi-select: players must pick all ${nCorrect} correct answers to score.`
+    : 'Tap the check to mark the correct answer. Mark more than one for multi-select. Answers 3–4 are optional.';
+  return `<section class="qcard" data-qi="${i}">
+    <div class="qhead">
+      <span class="qnum">${i + 1}</span>
+      <select data-f="type" aria-label="Question type"><option value="mc" ${q.type === 'mc' ? 'selected' : ''}>Quiz</option><option value="tf" ${q.type === 'tf' ? 'selected' : ''}>True or false</option></select>
+      <select data-f="time" aria-label="Time limit">${TIMES.map(t => `<option value="${t}" ${q.time === t ? 'selected' : ''}>${t < 60 ? t + ' sec' : t / 60 + ' min'}</option>`).join('')}</select>
+      <div class="sp"></div>
+      <button class="icon" data-act="up" title="Move up" ${i === 0 ? 'disabled' : ''}>↑</button>
+      <button class="icon" data-act="down" title="Move down" ${i === n - 1 ? 'disabled' : ''}>↓</button>
+      <button class="icon" data-act="dup" title="Duplicate">⧉</button>
+      <button class="icon" data-act="del" title="Delete">✕</button>
+    </div>
+    <textarea class="qtext" data-f="text" rows="2" maxlength="300" placeholder="Type your question">${esc(q.text)}</textarea>
+    <div class="imgzone ${q.image ? 'has' : ''}" data-act="pick">
+      ${q.image ? `<img src="${q.image}" alt=""><button class="icon rm" data-act="rmimg">✕ Remove</button>`
+        : `<div class="addimg"><span class="plus">+</span><span>Add image</span><span class="small">Click, drop, or paste an image</span></div>`}
+    </div>
+    <input type="file" accept="image/*" hidden data-f="file">
+    <div class="eans">
+      ${q.answers.map((a, j) => { const c = slotColor(q.type, j); return `<div class="erow c${c}">
+        <span class="shape">${SHAPE[c]}</span>
+        <input data-f="ans" data-j="${j}" value="${esc(a.text)}" maxlength="120" placeholder="Answer ${j + 1}${j >= 2 ? ' (optional)' : ''}" ${q.type === 'tf' ? 'readonly tabindex="-1"' : ''}>
+        <button class="corr ${a.correct ? 'on' : ''}" data-act="corr" data-j="${j}" title="Mark as correct" aria-pressed="${a.correct}">${CHECK}</button>
+      </div>`; }).join('')}
+    </div>
+    <div class="muted small">${hint}</div>
+  </section>`;
+}
+function renderEditor() {
+  const quiz = ED.quiz, sy = window.scrollY;
+  app.innerHTML = `
+  <div class="screen">
+    <header class="topbar">
+      <button class="btn small gray" id="back">← Quizzes</button>
+      <input class="titlein" id="title" maxlength="120" placeholder="Quiz title" value="${esc(quiz.title)}">
+      <span class="muted small" id="saveState">Saved</span>
+      <button class="btn small green" id="host">Host game</button>
+    </header>
+    <main class="wrap" id="edmain">
+      ${ED.errs ? `<div class="errbox">Fix these before hosting:<ul>${ED.errs.map(e => `<li>${esc(e)}</li>`).join('')}</ul></div>` : ''}
+      ${quiz.questions.map((q, i) => qCard(q, i, quiz.questions.length)).join('')}
+      <div class="addrow"><button class="btn primary" data-add="mc">+ Quiz question</button><button class="btn primary" data-add="tf">+ True / False</button></div>
+    </main>
+  </div>`;
+  window.scrollTo(0, sy);
+  const main = $('#edmain');
+  $('#back').onclick = async () => { await saveNow(); showLibrary(); };
+  $('#title').oninput = e => { quiz.title = e.target.value; saveSoon(); };
+  $('#host').onclick = async () => {
+    await saveNow();
+    const errs = validate(quiz);
+    if (errs.length) { ED.errs = errs; renderEditor(); window.scrollTo(0, 0); return; }
+    hostStart(quiz);
+  };
+  const qOf = el => { const c = el.closest('.qcard'); return c ? [quiz.questions[+c.dataset.qi], +c.dataset.qi] : [null, -1]; };
+  main.oninput = e => {
+    const f = e.target.dataset.f, [q] = qOf(e.target); if (!q) return;
+    if (f === 'text') q.text = e.target.value;
+    else if (f === 'ans') q.answers[+e.target.dataset.j].text = e.target.value;
+    else return;
+    saveSoon();
+  };
+  main.onchange = async e => {
+    const f = e.target.dataset.f, [q, i] = qOf(e.target); if (!q) return;
+    if (f === 'type') {
+      const fresh = newQuestion(e.target.value);
+      q.type = fresh.type; q.answers = fresh.answers;
+      refreshCard(i);
+    } else if (f === 'time') { q.time = +e.target.value; }
+    else if (f === 'file') { await setImage(q, i, e.target.files[0]); return; }
+    else return;
+    saveSoon();
+  };
+  main.onclick = e => {
+    const add = e.target.closest('[data-add]');
+    if (add) { quiz.questions.push(newQuestion(add.dataset.add)); saveSoon(); renderEditor(); const cards = $$('.qcard'); cards[cards.length - 1].scrollIntoView({ behavior: 'smooth', block: 'center' }); cards[cards.length - 1].querySelector('textarea').focus({ preventScroll: true }); return; }
+    const b = e.target.closest('[data-act]'); if (!b) return;
+    const [q, i] = qOf(b); if (!q) return;
+    const qs = quiz.questions;
+    switch (b.dataset.act) {
+      case 'up': if (i > 0) { [qs[i - 1], qs[i]] = [qs[i], qs[i - 1]]; saveSoon(); renderEditor(); } break;
+      case 'down': if (i < qs.length - 1) { [qs[i + 1], qs[i]] = [qs[i], qs[i + 1]]; saveSoon(); renderEditor(); } break;
+      case 'dup': qs.splice(i + 1, 0, { ...JSON.parse(JSON.stringify(q)), id: uid() }); saveSoon(); renderEditor(); break;
+      case 'del':
+        if ((q.text || q.image) && !confirm(`Delete question ${i + 1}?`)) break;
+        qs.splice(i, 1); if (!qs.length) qs.push(newQuestion()); saveSoon(); renderEditor(); break;
+      case 'pick': b.closest('.qcard').querySelector('[data-f=file]').click(); break;
+      case 'rmimg': e.stopPropagation(); q.image = null; saveSoon(); refreshCard(i); break;
+      case 'corr': {
+        const j = +b.dataset.j;
+        if (q.type === 'tf') q.answers.forEach((a, k) => a.correct = k === j);
+        else q.answers[j].correct = !q.answers[j].correct;
+        saveSoon(); refreshCard(i); break;
+      }
+    }
+  };
+  main.ondragover = e => { const z = e.target.closest('.imgzone'); if (z) { e.preventDefault(); z.classList.add('drag'); } };
+  main.ondragleave = e => { const z = e.target.closest('.imgzone'); if (z) z.classList.remove('drag'); };
+  main.ondrop = e => {
+    const z = e.target.closest('.imgzone'); if (!z) return;
+    e.preventDefault(); z.classList.remove('drag');
+    const [q, i] = qOf(z); const f = e.dataTransfer.files[0]; if (q && f) setImage(q, i, f);
+  };
+  main.onpaste = e => {
+    const file = [...(e.clipboardData?.items || [])].find(it => it.type.startsWith('image/'))?.getAsFile();
+    if (!file) return;
+    const [q, i] = qOf(e.target.closest('.qcard') ? e.target : (document.activeElement || e.target));
+    if (q) { e.preventDefault(); setImage(q, i, file); }
+  };
+}
+async function setImage(q, i, file) {
+  try { q.image = await compressImage(file); await saveNow(); refreshCard(i); }
+  catch (err) { toast(err.message || 'Image failed'); }
+}
+function refreshCard(i) {
+  const old = $(`.qcard[data-qi="${i}"]`); if (!old) return renderEditor();
+  const tmp = document.createElement('div'); tmp.innerHTML = qCard(ED.quiz.questions[i], i, ED.quiz.questions.length);
+  old.replaceWith(tmp.firstElementChild);
+}
+
+/* ================= Host ================= */
+let HOST = null;
+const players = () => [...HOST.players.values()];
+const online = () => players().filter(p => p.online);
+function send(p, msg) { if (p.conn && p.conn.open) { try { p.conn.send(msg); } catch { } } }
+function broadcast(msgFn) { for (const p of players()) send(p, typeof msgFn === 'function' ? msgFn(p) : msgFn); }
+
+function hostStart(quiz) {
+  if (HOST) hostTeardown();
+  HOST = { quiz, qs: quiz.questions.map(playable), players: new Map(), qi: -1, phase: 'connecting', peer: null, pin: null, timers: [] };
+  loadingScreen('Creating game…');
+  wake(true);
+  openHostPeer(0);
+}
+function openHostPeer(tries) {
+  const pin = String(Math.floor(100000 + Math.random() * 900000));
+  const peer = new Peer(PEER_PREFIX + pin, PEER_OPTS);
+  const h = HOST;
+  peer.on('open', () => { if (HOST !== h) return peer.destroy(); h.peer = peer; h.pin = pin; renderLobby(); });
+  peer.on('error', err => {
+    if (HOST !== h) return;
+    if (err.type === 'unavailable-id' && tries < 6) { peer.destroy(); return openHostPeer(tries + 1); }
+    if (!h.pin) { messageScreen('Couldn’t create a game', esc('Check your internet connection and try again. (' + (err.type || err.message) + ')'), '<button class="btn" id="m1">Back to quizzes</button>'); $('#m1').onclick = () => { hostTeardown(); showLibrary(); }; }
+    else console.warn('Peer error', err);
+  });
+  peer.on('disconnected', () => { if (HOST === h && !peer.destroyed) setTimeout(() => { try { peer.reconnect(); } catch { } }, 1000); });
+  peer.on('connection', conn => {
+    conn.on('data', d => { if (HOST === h) hostOnData(conn, d); });
+    conn.on('close', () => { if (HOST === h) hostOnClose(conn); });
+  });
+}
+function hostTeardown() {
+  if (!HOST) return;
+  HOST.timers.forEach(t => { clearTimeout(t); clearInterval(t); });
+  broadcast({ t: 'bye' });
+  const peer = HOST.peer;
+  HOST = null; wake(false);
+  setTimeout(() => { try { peer && peer.destroy(); } catch { } }, 300);
+}
+function hostClearTimers() { HOST.timers.forEach(t => { clearTimeout(t); clearInterval(t); }); HOST.timers = []; }
+
+function hostOnData(conn, d) {
+  if (!d || typeof d !== 'object') return;
+  if (d.t === 'join') {
+    const name = String(d.name || '').replace(/\s+/g, ' ').trim().slice(0, 15), cid = String(d.cid || '').slice(0, 40);
+    if (!name || !cid) return;
+    let p = HOST.players.get(cid);
+    if (!p) {
+      if (players().some(x => x.name.toLowerCase() === name.toLowerCase())) return conn.send({ t: 'nametaken' });
+      if (HOST.phase === 'podium') return conn.send({ t: 'error', msg: 'This game has already ended.' });
+      p = { cid, name, score: 0, streak: 0, correctCount: 0, answer: null, last: null, rank: 0 };
+      HOST.players.set(cid, p);
+    }
+    if (p.conn && p.conn !== conn) { const old = p.conn; p.conn = null; try { old.close(); } catch { } }
+    p.conn = conn; conn.cid = cid; p.online = true;
+    send(p, { t: 'welcome', name: p.name, score: p.score });
+    syncPlayer(p);
+    if (HOST.phase === 'lobby') renderLobbyPlayers();
+    if (HOST.phase === 'question') updateAnswerCount();
+  } else if (d.t === 'answer') {
+    const p = HOST.players.get(conn.cid);
+    if (!p || HOST.phase !== 'question' || d.qi !== HOST.qi || p.answer) return;
+    const q = HOST.qs[HOST.qi];
+    const choice = [...new Set((Array.isArray(d.choice) ? d.choice : []).map(Number))].filter(i => q.slots[i] != null);
+    if (!choice.length) return;
+    p.answer = { choice, ms: Date.now() - HOST.qStart };
+    send(p, { t: 'answered' });
+    updateAnswerCount();
+    if (online().every(x => x.answer)) endQuestion();
+  }
+}
+function hostOnClose(conn) {
+  const p = players().find(x => x.conn === conn); if (!p) return;
+  p.online = false; p.conn = null;
+  if (HOST.phase === 'lobby') renderLobbyPlayers();
+  if (HOST.phase === 'question') { updateAnswerCount(); if (online().length && online().every(x => x.answer)) endQuestion(); }
+}
+function qMsg() {
+  const q = HOST.qs[HOST.qi];
+  return { t: 'question', qi: HOST.qi, total: HOST.qs.length, type: q.type, slots: q.slots, multi: q.multi, text: q.text, time: q.time, left: q.time - (Date.now() - HOST.qStart) / 1000 };
+}
+function syncPlayer(p) {
+  const q = HOST.qs[HOST.qi];
+  switch (HOST.phase) {
+    case 'lobby': return send(p, { t: 'lobby' });
+    case 'getready': return send(p, { t: 'getready', qi: HOST.qi, total: HOST.qs.length, text: q.text });
+    case 'question': return send(p, p.answer ? { t: 'answered' } : qMsg());
+    case 'reveal': case 'scoreboard': return send(p, p.last ? { t: 'result', ...p.last } : { t: 'wait' });
+    case 'podium': return send(p, { t: 'end', rank: p.rank, score: p.score, of: players().length });
+  }
+}
+function ranked() {
+  const arr = players().sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+  let prev = null, r = 0;
+  arr.forEach((p, i) => { if (p.score !== prev) { r = i + 1; prev = p.score; } p.rank = r; });
+  return arr;
+}
+function qrSvg(text) {
+  try { const q = qrcode(0, 'M'); q.addData(text); q.make(); return q.createSvgTag({ cellSize: 4, margin: 2 }).replace(/ width="\d+px"| height="\d+px"/g, ''); }
+  catch { return ''; }
+}
+function hostCtl(extra = '') {
+  return `<div class="hostctl">${extra}<button class="btn small gray" data-hc="fs" title="Fullscreen">⛶</button><button class="btn small gray" data-hc="end">End</button></div>`;
+}
+function bindHostCtl() {
+  $$('[data-hc]').forEach(b => b.onclick = () => {
+    if (b.dataset.hc === 'fs') { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.().catch(() => { }); }
+    if (b.dataset.hc === 'end' && confirm('End this game for everyone?')) { hostTeardown(); showLibrary(); }
+  });
+}
+
+/* ---- Lobby ---- */
+function renderLobby() {
+  HOST.phase = 'lobby';
+  const base = location.origin + location.pathname;
+  const extra = PEER_OPTS.host ? `&peerhost=${encodeURIComponent(PEER_OPTS.host)}&peerport=${PEER_OPTS.port}` : '';
+  const joinUrl = `${base}?pin=${HOST.pin}${extra}`;
+  app.innerHTML = `
+  <div class="screen purple">
+    ${hostCtl()}
+    <div class="lobby-top"><div class="joinbox card">
+      <div class="joinat">Join at<b>${esc(base.replace(/^https?:\/\//, '').replace(/\/$/, '').replace(/\/index\.html$/, ''))}</b>or scan the code</div>
+      <div class="pinbox"><small>Game PIN:</small><div class="bigpin">${fmtPin(HOST.pin)}</div></div>
+      <div class="qr">${qrSvg(joinUrl)}</div>
+    </div></div>
+    <div class="lobby-bar">
+      <div class="count"><b id="pcount">0</b> Players</div>
+      <div class="lobby-title">${esc(HOST.quiz.title || 'Untitled quiz')}</div>
+      <div class="sp"></div>
+      <button class="btn big" id="start" disabled>Start</button>
+    </div>
+    <div class="names" id="names"></div>
+  </div>`;
+  bindHostCtl();
+  $('#start').onclick = () => { if (players().length) { HOST.qi = -1; nextQuestion(); } };
+  $('#names').onclick = e => {
+    const c = e.target.closest('.chip'); if (!c) return;
+    const p = HOST.players.get(c.dataset.cid);
+    if (p && confirm(`Remove ${p.name} from the game?`)) { send(p, { t: 'kicked' }); HOST.players.delete(p.cid); setTimeout(() => { try { p.conn?.close(); } catch { } }, 200); renderLobbyPlayers(); }
+  };
+  renderLobbyPlayers();
+}
+function renderLobbyPlayers() {
+  const el = $('#names'); if (!el) return;
+  const ps = players();
+  $('#pcount').textContent = ps.length;
+  $('#start').disabled = !ps.length;
+  el.innerHTML = ps.length ? ps.map(p => `<button class="chip ${p.online ? '' : 'off'}" data-cid="${esc(p.cid)}" title="Click to remove">${esc(p.name)}</button>`).join('')
+    : '<div class="waiting">Waiting for players…</div>';
+}
+
+/* ---- Question flow ---- */
+function nextQuestion() {
+  hostClearTimers();
+  HOST.qi++;
+  if (HOST.qi >= HOST.qs.length) return showPodium();
+  const q = HOST.qs[HOST.qi];
+  HOST.phase = 'getready';
+  for (const p of players()) { p.answer = null; p.last = null; }
+  broadcast({ t: 'getready', qi: HOST.qi, total: HOST.qs.length, text: q.text });
+  const words = q.text.split(/\s+/).filter(Boolean).length;
+  const ms = clamp(2500 + words * 220, 3000, 8000);
+  app.innerHTML = `<div class="screen purple">${hostCtl()}<div class="getready">
+    <div class="qn">Question ${HOST.qi + 1} of ${HOST.qs.length}</div>
+    <div class="gq">${esc(q.text) || 'Look at the picture!'}</div>
+    <div class="prog"><div id="prog"></div></div></div></div>`;
+  bindHostCtl();
+  requestAnimationFrame(() => requestAnimationFrame(() => { const p = $('#prog'); if (p) { p.style.transition = `width ${ms}ms linear`; p.style.width = '100%'; } }));
+  HOST.timers.push(setTimeout(startQuestion, ms));
+}
+function tilesHtml(q, reveal) {
+  return q.slots.map((s, i) => {
+    if (s == null) return '';
+    const c = slotColor(q.type, i), ok = q.correct.includes(i);
+    return `<div class="tile c${c} ${reveal && !ok ? 'dim' : ''}">${SHAPE[c]}<span>${esc(s)}</span>${reveal ? (ok ? CHECK : XMARK) : ''}</div>`;
+  }).join('');
+}
+function gameFrame(q, mid, side, topBtn = '') {
+  return `<div class="screen game">
+    <div class="gtop"><div class="qbar">${esc(q.text) || '&nbsp;'}</div>${topBtn}</div>
+    <div class="gmid">${mid}${side}</div>
+    <div class="tiles">${tilesHtml(q, HOST.phase === 'reveal')}</div>
+    <div class="gfoot"><span>${HOST.qi + 1}/${HOST.qs.length}</span><span>Game PIN: ${fmtPin(HOST.pin)}</span></div>
+  </div>`;
+}
+function startQuestion() {
+  hostClearTimers();
+  const q = HOST.qs[HOST.qi];
+  HOST.phase = 'question'; HOST.qStart = Date.now();
+  broadcast(p => qMsg());
+  app.innerHTML = gameFrame(q,
+    `<div class="timer" id="timer">${q.time}</div><div class="media">${q.image ? `<img src="${q.image}" alt="">` : ''}${q.multi ? '<div class="multi-tag">Select all that apply</div>' : ''}</div>`,
+    `<div class="side"><div class="acount"><b id="acount">0</b>Answers</div><button class="btn small gray" id="skip">Skip</button></div>`);
+  $('#skip').onclick = endQuestion;
+  HOST.timers.push(setInterval(() => {
+    const left = q.time - (Date.now() - HOST.qStart) / 1000, t = $('#timer');
+    if (t) { t.textContent = Math.max(0, Math.ceil(left)); t.classList.toggle('low', left <= 5); }
+    if (left <= 0) endQuestion();
+  }, 200));
+}
+function updateAnswerCount() { const el = $('#acount'); if (el) el.textContent = players().filter(p => p.answer).length; }
+function endQuestion() {
+  if (!HOST || HOST.phase !== 'question') return;
+  hostClearTimers();
+  HOST.phase = 'reveal';
+  const q = HOST.qs[HOST.qi], counts = q.slots.map(() => 0), isLast = HOST.qi === HOST.qs.length - 1;
+  for (const p of players()) {
+    const a = p.answer; let correct = false, pts = 0;
+    if (a) { a.choice.forEach(i => counts[i]++); correct = a.choice.length === q.correct.length && a.choice.every(i => q.correct.includes(i)); }
+    if (correct) {
+      p.streak++; p.correctCount++;
+      pts = Math.round(1000 * (1 - (a.ms / 1000 / q.time) / 2));
+      pts = clamp(pts, 500, 1000) + Math.min(p.streak - 1, 5) * 100;
+    } else p.streak = 0;
+    p.score += pts;
+    p.last = { correct, pts, answered: !!a };
+  }
+  const arr = ranked();
+  arr.forEach(p => {
+    const ahead = arr.filter(x => x.score > p.score).pop();
+    Object.assign(p.last, { score: p.score, rank: p.rank, streak: p.streak, of: arr.length, ahead: ahead ? { name: ahead.name, gap: ahead.score - p.score } : null, final: isLast });
+    send(p, { t: 'result', ...p.last });
+  });
+  const max = Math.max(1, ...counts);
+  app.innerHTML = gameFrame(q,
+    `<div></div><div class="media"><div class="chart">${q.slots.map((s, i) => {
+      if (s == null) return ''; const c = slotColor(q.type, i), ok = q.correct.includes(i);
+      return `<div class="col ${ok ? '' : 'dim'}"><div class="bar c${c}" data-h="${Math.round(counts[i] / max * 100)}"></div><div class="lab c${c}">${SHAPE[c]}<span>${counts[i]}</span>${ok ? CHECK : ''}</div></div>`;
+    }).join('')}</div></div>`,
+    '<div></div>',
+    `<button class="btn primary big" id="next">${isLast ? 'Results' : 'Next'}</button>`);
+  requestAnimationFrame(() => requestAnimationFrame(() => $$('.bar').forEach(b => b.style.height = `calc(${b.dataset.h}% - 50px)`)));
+  $('#next').onclick = isLast ? showPodium : showScoreboard;
+}
+function showScoreboard() {
+  HOST.phase = 'scoreboard';
+  const top = ranked().slice(0, 5);
+  app.innerHTML = `<div class="screen purple">
+    <div class="sbhead"><h1>Scoreboard</h1><button class="btn big" id="next">Next</button></div>
+    <div class="sblist">${top.map((p, i) => `<div class="sbrow" style="animation-delay:${i * 0.08}s"><span class="rk">${p.rank}</span><span class="nm">${esc(p.name)}</span>${p.streak >= 2 ? `<span class="streak">🔥 ${p.streak}</span>` : ''}<b>${p.score.toLocaleString()}</b></div>`).join('') || '<p style="text-align:center">No players</p>'}</div>
+  </div>`;
+  $('#next').onclick = nextQuestion;
+}
+function showPodium() {
+  hostClearTimers();
+  HOST.phase = 'podium';
+  const arr = ranked();
+  arr.forEach(p => send(p, { t: 'end', rank: p.rank, score: p.score, of: arr.length }));
+  const pod = (p, place) => p ? `<div class="pod r${place}"><div class="pname">${esc(p.name)}</div><div class="pblock"><div class="medal">${place}</div><div class="pscore">${p.score.toLocaleString()}</div><div class="small">${p.correctCount} of ${HOST.qs.length} correct</div></div></div>` : '';
+  app.innerHTML = `<div class="screen purple">
+    <div class="sbhead"><h1>${esc(HOST.quiz.title || 'Final results')}</h1></div>
+    <div class="podium">${pod(arr[1], 2)}${pod(arr[0], 1)}${pod(arr[2], 3)}</div>
+    ${arr.length > 3 ? `<div class="rest">${arr.slice(3).map(p => `<span>${p.rank}. ${esc(p.name)} · ${p.score.toLocaleString()}</span>`).join('')}</div>` : ''}
+    <div class="pactions">
+      <button class="btn" id="again">Play again</button>
+      <button class="btn" id="csv">Download results</button>
+      <button class="btn" id="exit">Back to quizzes</button>
+    </div>
+  </div>`;
+  $('#again').onclick = () => {
+    for (const p of players()) { p.score = 0; p.streak = 0; p.correctCount = 0; p.answer = null; p.last = null; }
+    for (const p of players()) if (!p.online) HOST.players.delete(p.cid);
+    renderLobby(); broadcast({ t: 'lobby' });
+  };
+  $('#csv').onclick = () => {
+    const rows = [['Rank', 'Player', 'Score', 'Correct', 'Questions']].concat(arr.map(p => [p.rank, p.name, p.score, p.correctCount, HOST.qs.length]));
+    download(safeName(HOST.quiz.title) + '-results.csv', rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n'), 'text/csv');
+  };
+  $('#exit').onclick = () => { hostTeardown(); showLibrary(); };
+}
+document.addEventListener('keydown', e => {
+  if (!HOST || /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName)) return;
+  if (e.key === ' ' || e.key === 'Enter' || e.key === 'ArrowRight') {
+    const b = $('#next') || (HOST.phase === 'lobby' && !$('#start')?.disabled ? $('#start') : null);
+    if (b) { e.preventDefault(); b.click(); }
+  }
+});
+window.addEventListener('beforeunload', e => { if (HOST && HOST.phase !== 'podium' && players().length) { e.preventDefault(); e.returnValue = ''; } });
+
+/* ================= Player ================= */
+let PL = null;
+function getCid() {
+  let c = sessionStorage.getItem('bq-cid');
+  if (!c) { c = uid(); sessionStorage.setItem('bq-cid', c); }
+  return c;
+}
+function playerConnect(pin, name) {
+  if (PL) { PL.dead = true; try { PL.peer?.destroy(); } catch { } }
+  const pl = PL = { pin, name: name || null, cid: getCid(), score: 0, peer: null, conn: null, tick: null, joined: false };
+  loadingScreen('Connecting…');
+  const fail = msg => {
+    if (PL !== pl || pl.dead) return;
+    pl.dead = true; try { pl.peer?.destroy(); } catch { }
+    messageScreen('Hmm…', esc(msg), '<button class="btn" id="m1">Try again</button>');
+    $('#m1').onclick = () => showHome(pin);
+  };
+  const to = setTimeout(() => { if (!pl.conn?.open) fail('Couldn’t reach that game. Check the PIN and your connection.'); }, 15000);
+  const peer = new Peer(PEER_OPTS);
+  pl.peer = peer;
+  peer.on('open', () => {
+    if (PL !== pl) return;
+    const conn = peer.connect(PEER_PREFIX + pin, { reliable: true });
+    pl.conn = conn;
+    conn.on('open', () => { clearTimeout(to); if (PL !== pl) return; wake(true); pl.name ? sendJoin() : renderNickname(); });
+    conn.on('data', d => { if (PL === pl) playerOnData(d); });
+    conn.on('close', () => { if (PL === pl && !pl.dead) renderLost(); });
+  });
+  peer.on('error', err => {
+    clearTimeout(to);
+    if (err.type === 'peer-unavailable') fail('Game not found. Check the PIN and try again.');
+    else if (!pl.conn?.open) fail('Connection problem (' + (err.type || err.message) + ').');
+  });
+  peer.on('disconnected', () => { if (PL === pl && !pl.dead && !peer.destroyed) { try { peer.reconnect(); } catch { } } });
+}
+function sendJoin() { try { PL.conn.send({ t: 'join', name: PL.name, cid: PL.cid }); } catch { } }
+function pFrame(cls, body, top = '') {
+  clearInterval(PL.tick);
+  app.innerHTML = `<div class="screen pscreen ${cls}">${top}${body}
+    <div class="pbot"><span>${esc(PL.name || '')}</span><span class="sc">${(PL.score || 0).toLocaleString()}</span></div></div>`;
+}
+function renderNickname() {
+  app.innerHTML = `<div class="screen purple center"><div class="logo">Blitz<b>Quiz</b></div>
+    <form class="card stack join" id="nf" autocomplete="off"><input class="field" id="nick" maxlength="15" placeholder="Nickname"><button class="btn dark big">OK, go!</button></form></div>`;
+  $('#nick').focus();
+  $('#nf').onsubmit = e => {
+    e.preventDefault();
+    const n = $('#nick').value.replace(/\s+/g, ' ').trim();
+    if (!n) return toast('Enter a nickname');
+    PL.name = n; sendJoin(); loadingScreen('Joining…');
+  };
+}
+function renderLost() {
+  clearInterval(PL.tick);
+  const pin = PL.pin, name = PL.name;
+  messageScreen('Connection lost', 'You can rejoin with the same nickname and keep your score.',
+    `<button class="btn" id="m1">Rejoin</button><button class="btn" id="m2">Home</button>`);
+  $('#m1').onclick = () => playerConnect(pin, name);
+  $('#m2').onclick = () => { PL.dead = true; try { PL.peer.destroy(); } catch { } showHome(); };
+}
+function playerOnData(d) {
+  if (!d || typeof d !== 'object') return;
+  switch (d.t) {
+    case 'nametaken': PL.name = null; renderNickname(); toast('That nickname is taken. Try another.'); break;
+    case 'welcome': PL.name = d.name; PL.score = d.score || 0; PL.joined = true; sessionStorage.setItem('bq-session', JSON.stringify({ pin: PL.pin, name: PL.name })); break;
+    case 'lobby': PL.score = 0; pFrame('purple', `<div class="pbody"><h2>You’re in!</h2><p>See your nickname on screen?</p></div>`); break;
+    case 'wait': pFrame('purple', `<div class="pbody"><div class="spinner"></div><h2>Hang tight</h2><p>You’ll join in on the next question.</p></div>`); break;
+    case 'getready': pFrame('purple', `<div class="pbody"><p>Question ${d.qi + 1} of ${d.total}</p><h2>Get ready!</h2>${d.text ? `<p>${esc(d.text)}</p>` : ''}<div class="spinner"></div></div>`); break;
+    case 'question': renderPlayerQuestion(d); break;
+    case 'answered': pFrame('purple', `<div class="pbody"><div class="spinner"></div><h2>Answer locked in</h2><p>Waiting for the others…</p></div>`); break;
+    case 'result': renderPlayerResult(d); break;
+    case 'end': PL.score = d.score;
+      pFrame('purple', `<div class="pbody"><p>You finished</p><div class="rankbig">${ordinal(d.rank)}</div><p>out of ${d.of} player${d.of === 1 ? '' : 's'}</p><div class="pill">${d.score.toLocaleString()} points</div>
+        <p>${d.rank === 1 ? '🏆 Champion!' : d.rank <= 3 ? '🎉 On the podium!' : 'Thanks for playing!'}</p></div>`); break;
+    case 'kicked': PL.dead = true; sessionStorage.removeItem('bq-session'); try { PL.peer.destroy(); } catch { }
+      messageScreen('You were removed', 'The host removed you from this game.', '<button class="btn" id="m1">Home</button>'); $('#m1').onclick = () => showHome(); break;
+    case 'bye': PL.dead = true; sessionStorage.removeItem('bq-session'); try { PL.peer.destroy(); } catch { }
+      messageScreen('Game over', 'The host ended the game.', '<button class="btn" id="m1">Home</button>'); $('#m1').onclick = () => showHome(); break;
+    case 'error': PL.dead = true; messageScreen('Can’t join', esc(d.msg), '<button class="btn" id="m1">Home</button>'); $('#m1').onclick = () => showHome(); break;
+  }
+}
+function renderPlayerQuestion(d) {
+  const shown = d.slots.map((s, i) => s == null ? -1 : i).filter(i => i >= 0);
+  const sel = new Set();
+  pFrame('', `<div class="pqtext">${esc(d.text)}${d.multi ? '<div><span class="multi">Select all that apply</span></div>' : ''}</div>
+    <div class="ptiles-wrap"><div class="ptiles">${shown.map(i => { const c = slotColor(d.type, i); return `<button class="ptile c${c}" data-i="${i}">${SHAPE[c]}<span>${esc(d.slots[i])}</span>${CHECK}</button>`; }).join('')}</div>
+    ${d.multi ? '<button class="btn dark big submit" id="submit" disabled>Submit</button>' : ''}</div>`,
+    `<div class="pbar"><span>${d.qi + 1} of ${d.total}</span><span class="ptimer" id="ptime">${Math.max(0, Math.ceil(d.left))}</span><span>${d.multi ? 'Multi-select' : d.type === 'tf' ? 'True or false' : 'Quiz'}</span></div>`);
+  const end = Date.now() + d.left * 1000;
+  PL.tick = setInterval(() => { const el = $('#ptime'); if (el) el.textContent = Math.max(0, Math.ceil((end - Date.now()) / 1000)); }, 250);
+  const submit = choice => { try { PL.conn.send({ t: 'answer', qi: d.qi, choice }); } catch { } if (navigator.vibrate) navigator.vibrate(30); };
+  $('.ptiles').onclick = e => {
+    const b = e.target.closest('.ptile'); if (!b) return;
+    const i = +b.dataset.i;
+    if (!d.multi) { $$('.ptile').forEach(x => x.disabled = true); return submit([i]); }
+    sel.has(i) ? sel.delete(i) : sel.add(i);
+    b.classList.toggle('sel', sel.has(i));
+    $('#submit').disabled = !sel.size;
+  };
+  if (d.multi) $('#submit').onclick = () => { if (sel.size) { $('#submit').disabled = true; submit([...sel]); } };
+}
+function renderPlayerResult(d) {
+  PL.score = d.score;
+  const title = d.correct ? 'Correct' : d.answered ? 'Incorrect' : 'Time’s up';
+  const behind = d.rank === 1 ? 'You’re in the lead!' : d.ahead ? `${d.ahead.gap.toLocaleString()} points behind ${esc(d.ahead.name)}` : '';
+  pFrame(d.correct ? 'pres-ok' : 'pres-bad', `<div class="pbody">
+    <h2>${title}</h2><div class="badge">${d.correct ? CHECK : XMARK}</div>
+    ${d.correct && d.streak >= 2 ? `<p>🔥 Answer streak: ${d.streak}</p>` : ''}
+    <div class="pill">${d.correct ? '+ ' + d.pts.toLocaleString() : d.answered ? 'No points this time' : 'Too slow!'}</div>
+    <p>You’re in ${ordinal(d.rank)} place</p>${behind ? `<p style="opacity:.85">${behind}</p>` : ''}
+    ${d.final ? '<p>Final results coming up…</p>' : ''}</div>`);
+}
+
+/* ================= Boot ================= */
+(function boot() {
+  const pin = (URLP.get('pin') || '').replace(/\D/g, '');
+  if (URLP.get('host') !== null) return showLibrary();
+  showHome(pin.length === 6 ? pin : '');
+})();
+</script>
+</body>
+</html>
