@@ -158,6 +158,12 @@ h1{font-weight:700;margin:0 0 16px;letter-spacing:.5px}
 .getready .gq{font-family:Cinzel,serif;font-weight:700;font-size:clamp(26px,4.5vw,60px);max-width:1100px;white-space:pre-wrap;text-shadow:0 3px 6px rgba(0,0,0,.6)}
 .prog{width:min(600px,80vw);height:8px;background:rgba(243,215,122,.18);border:1px solid rgba(201,162,39,.5);border-radius:6px;overflow:hidden}
 .prog div{height:100%;background:linear-gradient(90deg,#c9a227,#fff3c4);width:0}
+.wcprompt{margin:10px;padding:clamp(18px,4vh,40px);text-align:center;font-family:Cinzel,serif;font-weight:700;font-size:clamp(20px,3vw,40px);color:var(--gold2);border:1px dashed rgba(201,162,39,.6);border-radius:6px;background:rgba(0,0,0,.25)}
+.cloud{flex:1;min-height:0;display:flex;flex-wrap:wrap;align-items:center;justify-content:center;align-content:center;gap:.4em 1.1em;padding:20px 5vw;overflow:hidden}
+.cw{font-family:Cinzel,serif;font-weight:700;line-height:1.1;text-shadow:0 3px 8px rgba(0,0,0,.6);opacity:0;animation:cwin .6s cubic-bezier(.2,.8,.2,1) forwards}
+.cw sup{font-size:.4em;opacity:.8;margin-left:.15em}
+@keyframes cwin{from{opacity:0;transform:scale(.4)}to{opacity:1;transform:none}}
+.wcform{display:flex;flex-direction:column;gap:12px;padding:24px 16px;max-width:460px;width:100%;margin:0 auto}
 .mutebtn{position:fixed;left:10px;bottom:8px;z-index:7;background:rgba(0,0,0,.55);border:1px solid rgba(201,162,39,.6);color:var(--gold2);border-radius:20px;padding:5px 12px;font-family:Cinzel,serif;font-weight:700;font-size:13px}
 .hostctl{position:fixed;top:10px;right:10px;display:flex;gap:6px;z-index:6}
 
@@ -503,8 +509,8 @@ function driveErr(e) {
 
 /* ================= Quiz model ================= */
 function newQuestion(type = 'mc') {
-  return { id: uid(), text: '', image: null, type, time: type === 'tf' ? 10 : 20,
-    answers: type === 'tf' ? [{ text: 'True', correct: true }, { text: 'False', correct: false }] : [0, 1, 2, 3].map(() => ({ text: '', correct: false })) };
+  return { id: uid(), text: '', image: null, type, time: type === 'tf' ? 10 : type === 'wc' ? 30 : 20,
+    answers: type === 'tf' ? [{ text: 'True', correct: true }, { text: 'False', correct: false }] : type === 'wc' ? [] : [0, 1, 2, 3].map(() => ({ text: '', correct: false })) };
 }
 const newQuiz = () => ({ id: uid(), title: '', updated: Date.now(), questions: [newQuestion()] });
 function playable(q) {
@@ -518,6 +524,7 @@ function validate(quiz) {
   quiz.questions.forEach((q, i) => {
     const p = playable(q), n = `Question ${i + 1}`;
     if (!p.text && !p.image) errs.push(`${n}: add question text or an image.`);
+    if (q.type === 'wc') return;
     if (p.slots.filter(Boolean).length < 2) errs.push(`${n}: needs at least 2 answers.`);
     if (!p.correct.length) errs.push(`${n}: mark at least one correct answer.`);
   });
@@ -529,7 +536,7 @@ function normalizeQuiz(raw) {
   return {
     id: uid(), title: String(raw.title || 'Imported quiz').slice(0, 120), updated: Date.now(),
     questions: raw.questions.map(q => {
-      const type = q.type === 'tf' ? 'tf' : 'mc', base = newQuestion(type), ans = Array.isArray(q.answers) ? q.answers : [];
+      const type = q.type === 'tf' || q.type === 'wc' ? q.type : 'mc', base = newQuestion(type), ans = Array.isArray(q.answers) ? q.answers : [];
       return { id: uid(), text: String(q.text || ''), image: typeof q.image === 'string' && q.image.startsWith('data:image/') ? q.image : null,
         type, time: TIMES.includes(+q.time) ? +q.time : 20,
         answers: base.answers.map((a, j) => ({ text: type === 'tf' ? a.text : String(ans[j]?.text || ''), correct: !!ans[j]?.correct })) };
@@ -733,13 +740,14 @@ async function drivePush() {
 async function leaveEditor() { await saveNow(); if (Drive.signedIn) await drivePush(); }
 function qCard(q, i, n) {
   const nCorrect = q.answers.filter(a => a.correct).length;
-  const hint = q.type === 'tf' ? 'Tap the check to mark the correct answer.'
+  const hint = q.type === 'wc' ? 'Word cloud: players type a word or short phrase on their phones, then everyone’s answers appear on the big screen. No points.'
+    : q.type === 'tf' ? 'Tap the check to mark the correct answer.'
     : nCorrect > 1 ? `Multi-select: players must pick all ${nCorrect} correct answers to score.`
     : 'Tap the check to mark the correct answer. Mark more than one for multi-select. Answers 3–4 are optional.';
   return `<section class="qcard" data-qi="${i}">
     <div class="qhead">
       <span class="qnum">${i + 1}</span>
-      <select data-f="type" aria-label="Question type"><option value="mc" ${q.type === 'mc' ? 'selected' : ''}>Quiz</option><option value="tf" ${q.type === 'tf' ? 'selected' : ''}>True or false</option></select>
+      <select data-f="type" aria-label="Question type"><option value="mc" ${q.type === 'mc' ? 'selected' : ''}>Quiz</option><option value="tf" ${q.type === 'tf' ? 'selected' : ''}>True or false</option><option value="wc" ${q.type === 'wc' ? 'selected' : ''}>Word cloud</option></select>
       <select data-f="time" aria-label="Time limit">${TIMES.map(t => `<option value="${t}" ${q.time === t ? 'selected' : ''}>${t < 60 ? t + ' sec' : t / 60 + ' min'}</option>`).join('')}</select>
       <div class="sp"></div>
       <button class="icon" data-act="up" title="Move up" ${i === 0 ? 'disabled' : ''}>↑</button>
@@ -753,7 +761,7 @@ function qCard(q, i, n) {
         : `<div class="addimg"><span class="plus">+</span><span>Add image</span><span class="small">Click, drop, or paste an image</span></div>`}
     </div>
     <input type="file" accept="image/*" hidden data-f="file">
-    <div class="eans">
+    <div class="eans" ${q.type === 'wc' ? 'hidden' : ''}>
       ${q.answers.map((a, j) => { const c = slotColor(q.type, j); return `<div class="erow c${c}">
         <span class="shape">${SHAPE[c]}</span>
         <input data-f="ans" data-j="${j}" value="${esc(a.text)}" maxlength="120" placeholder="Answer ${j + 1}${j >= 2 ? ' (optional)' : ''}" ${q.type === 'tf' ? 'readonly tabindex="-1"' : ''}>
@@ -776,7 +784,7 @@ function renderEditor() {
     <main class="wrap" id="edmain">
       ${ED.errs ? `<div class="errbox">Fix these before hosting:<ul>${ED.errs.map(e => `<li>${esc(e)}</li>`).join('')}</ul></div>` : ''}
       ${quiz.questions.map((q, i) => qCard(q, i, quiz.questions.length)).join('')}
-      <div class="addrow"><button class="btn primary" data-add="mc">+ Quiz question</button><button class="btn primary" data-add="tf">+ True / False</button></div>
+      <div class="addrow"><button class="btn primary" data-add="mc">+ Quiz question</button><button class="btn primary" data-add="tf">+ True / False</button><button class="btn primary" data-add="wc">+ Word cloud</button></div>
     </main>
   </div>`;
   window.scrollTo(0, sy);
@@ -921,9 +929,15 @@ function hostOnData(conn, d) {
     const p = HOST.players.get(conn.cid);
     if (!p || HOST.phase !== 'question' || d.qi !== HOST.qi || p.answer) return;
     const q = HOST.qs[HOST.qi];
-    const choice = [...new Set((Array.isArray(d.choice) ? d.choice : []).map(Number))].filter(i => q.slots[i] != null);
-    if (!choice.length) return;
-    p.answer = { choice, ms: Date.now() - HOST.qStart };
+    if (q.type === 'wc') {
+      const text = String(d.text || '').replace(/\s+/g, ' ').trim().slice(0, 30);
+      if (!text) return;
+      p.answer = { text, ms: Date.now() - HOST.qStart };
+    } else {
+      const choice = [...new Set((Array.isArray(d.choice) ? d.choice : []).map(Number))].filter(i => q.slots[i] != null);
+      if (!choice.length) return;
+      p.answer = { choice, ms: Date.now() - HOST.qStart };
+    }
     send(p, { t: 'answered' });
     Music.sfx('blip');
     updateAnswerCount();
@@ -1042,7 +1056,7 @@ function gameFrame(q, mid, side, topBtn = '') {
   return `<div class="screen game">
     <div class="gtop"><div class="qbar">${esc(q.text) || '&nbsp;'}</div>${topBtn}</div>
     <div class="gmid">${mid}${side}</div>
-    <div class="tiles">${tilesHtml(q, HOST.phase === 'reveal')}</div>
+    ${q.type === 'wc' ? '<div class="wcprompt">Type your answer on your phone</div>' : `<div class="tiles">${tilesHtml(q, HOST.phase === 'reveal')}</div>`}
     <div class="gfoot"><span></span><span>${HOST.qi + 1}/${HOST.qs.length} · Game PIN: ${fmtPin(HOST.pin)}</span></div>
   </div>`;
 }
@@ -1070,6 +1084,7 @@ function endQuestion() {
   HOST.phase = 'reveal';
   Music.stop(); Music.sfx('reveal');
   const q = HOST.qs[HOST.qi], counts = q.slots.map(() => 0), isLast = HOST.qi === HOST.qs.length - 1;
+  if (q.type === 'wc') return revealCloud(q, isLast);
   for (const p of players()) {
     const a = p.answer; let correct = false, pts = 0;
     if (a) { a.choice.forEach(i => counts[i]++); correct = a.choice.length === q.correct.length && a.choice.every(i => q.correct.includes(i)); }
@@ -1098,6 +1113,28 @@ function endQuestion() {
   requestAnimationFrame(() => requestAnimationFrame(() => $$('.bar').forEach(b => b.style.height = `calc(${b.dataset.h}% - 50px)`)));
   $('#next').onclick = isLast ? showPodium : showScoreboard;
 }
+function revealCloud(q, isLast) {
+  const groups = new Map();
+  for (const p of players()) {
+    const a = p.answer;
+    p.last = { wc: true, answered: !!a, text: a ? a.text : '', score: p.score, final: isLast };
+    send(p, { t: 'result', ...p.last });
+    if (!a) continue;
+    const k = a.text.toLowerCase().replace(/[.!?,]+$/, '');
+    const g = groups.get(k) || { text: a.text.replace(/[.!?,]+$/, ''), n: 0 };
+    g.n++; groups.set(k, g);
+  }
+  const words = [...groups.values()].sort((a, b) => b.n - a.n), max = Math.max(1, ...words.map(w => w.n));
+  const order = []; words.forEach((w, i) => i % 2 ? order.push(w) : order.unshift(w)); // biggest in the middle
+  const colors = ['#f3d77a', '#fbf3dc', '#f28b82', '#8ab4f8', '#e6c25a', '#9fd39b'];
+  app.innerHTML = `<div class="screen game">
+    <div class="gtop"><div class="qbar">${esc(q.text) || '&nbsp;'}</div><button class="btn primary big" id="next">${isLast ? 'Results' : 'Next'}</button></div>
+    <div class="cloud">${order.length ? order.map((w, i) => `<span class="cw" style="font-size:max(20px,${(1.6 + 4.2 * w.n / max).toFixed(2)}vw);color:${colors[i % colors.length]};animation-delay:${(0.15 + i * 0.12).toFixed(2)}s">${esc(w.text)}${w.n > 1 ? `<sup>×${w.n}</sup>` : ''}</span>`).join('')
+      : '<span class="cw" style="font-size:3vw">No answers this time</span>'}</div>
+    <div class="gfoot"><span></span><span>${words.reduce((s, w) => s + w.n, 0)} answer${words.reduce((s, w) => s + w.n, 0) === 1 ? '' : 's'} · ${HOST.qi + 1}/${HOST.qs.length} · Game PIN: ${fmtPin(HOST.pin)}</span></div>
+  </div>`;
+  $('#next').onclick = isLast ? showPodium : showScoreboard;
+}
 function showScoreboard() {
   HOST.phase = 'scoreboard';
   Music.play('lobby');
@@ -1115,7 +1152,7 @@ function showPodium() {
   HOST.timers.push(setTimeout(() => { if (HOST && HOST.phase === 'podium') Music.play('lobby'); }, 4800));
   const arr = ranked();
   arr.forEach(p => send(p, { t: 'end', rank: p.rank, score: p.score, of: arr.length }));
-  const pod = (p, place) => p ? `<div class="pod r${place}"><div class="pname">${esc(p.name)}</div><div class="pblock"><div class="medal">${place}</div><div class="pscore">${p.score.toLocaleString()}</div><div class="small">${p.correctCount} of ${HOST.qs.length} correct</div></div></div>` : '';
+  const pod = (p, place) => p ? `<div class="pod r${place}"><div class="pname">${esc(p.name)}</div><div class="pblock"><div class="medal">${place}</div><div class="pscore">${p.score.toLocaleString()}</div><div class="small">${p.correctCount} of ${HOST.qs.filter(x => x.type !== 'wc').length} correct</div></div></div>` : '';
   app.innerHTML = `<div class="screen purple">
     <div class="sbhead"><h1>${esc(HOST.quiz.title || 'Final results')}</h1></div>
     <div class="podium">${pod(arr[1], 2)}${pod(arr[0], 1)}${pod(arr[2], 3)}</div>
@@ -1132,7 +1169,7 @@ function showPodium() {
     renderLobby(); broadcast({ t: 'lobby' });
   };
   $('#csv').onclick = () => {
-    const rows = [['Rank', 'Player', 'Score', 'Correct', 'Questions']].concat(arr.map(p => [p.rank, p.name, p.score, p.correctCount, HOST.qs.length]));
+    const rows = [['Rank', 'Player', 'Score', 'Correct', 'Questions']].concat(arr.map(p => [p.rank, p.name, p.score, p.correctCount, HOST.qs.filter(x => x.type !== 'wc').length]));
     download(safeName(HOST.quiz.title) + '-results.csv', rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n'), 'text/csv');
   };
   $('#exit').onclick = () => { hostTeardown(); showLibrary(); };
@@ -1229,6 +1266,7 @@ function playerOnData(d) {
   }
 }
 function renderPlayerQuestion(d) {
+  if (d.type === 'wc') return renderPlayerWord(d);
   const shown = d.slots.map((s, i) => s == null ? -1 : i).filter(i => i >= 0);
   const sel = new Set();
   pFrame('', `<div class="pqtext">${esc(d.text)}${d.multi ? '<div><span class="multi">Select all that apply</span></div>' : ''}</div>
@@ -1248,8 +1286,28 @@ function renderPlayerQuestion(d) {
   };
   if (d.multi) $('#submit').onclick = () => { if (sel.size) { $('#submit').disabled = true; submit([...sel]); } };
 }
+function renderPlayerWord(d) {
+  pFrame('', `<div class="pqtext">${esc(d.text)}</div>
+    <div class="ptiles-wrap"><form class="wcform" id="wcf" autocomplete="off">
+      <input class="field" id="wci" maxlength="30" placeholder="Type your answer" autocapitalize="sentences" enterkeyhint="send">
+      <button class="btn big">Submit</button></form></div>`,
+    `<div class="pbar"><span>${d.qi + 1} of ${d.total}</span><span class="ptimer" id="ptime">${Math.max(0, Math.ceil(d.left))}</span><span>Word cloud</span></div>`);
+  const end = Date.now() + d.left * 1000;
+  PL.tick = setInterval(() => { const el = $('#ptime'); if (el) el.textContent = Math.max(0, Math.ceil((end - Date.now()) / 1000)); }, 250);
+  $('#wci').focus();
+  $('#wcf').onsubmit = e => {
+    e.preventDefault();
+    const text = $('#wci').value.replace(/\s+/g, ' ').trim();
+    if (!text) return toast('Type an answer first');
+    try { PL.conn.send({ t: 'answer', qi: d.qi, text }); } catch { }
+    if (navigator.vibrate) navigator.vibrate(30);
+  };
+}
 function renderPlayerResult(d) {
   PL.score = d.score;
+  if (d.wc) return pFrame('purple', `<div class="pbody"><h2>${d.answered ? 'Thanks!' : 'Time’s up'}</h2>
+    ${d.answered ? `<p>You said</p><div class="pill">${esc(d.text)}</div>` : ''}<p>Look at the big screen to see everyone’s answers.</p>
+    ${d.final ? '<p>Final results coming up…</p>' : ''}</div>`);
   const title = d.correct ? 'Correct' : d.answered ? 'Incorrect' : 'Time’s up';
   const behind = d.rank === 1 ? 'You’re in the lead!' : d.ahead ? `${d.ahead.gap.toLocaleString()} points behind ${esc(d.ahead.name)}` : '';
   pFrame(d.correct ? 'pres-ok' : 'pres-bad', `<div class="pbody">
