@@ -421,104 +421,41 @@ const DB = {
   del(id) { return this.run('readwrite', s => s.delete(id)); },
 };
 
-/* ================= Google Drive sync ================= */
-// Same Google Cloud OAuth client as the Reader app (same github.io origin). drive.file scope:
-// the app can only see files it created, i.e. its own "Cooper Quiz" folder.
-const GOOGLE_CLIENT_ID = '448915274422-om13evvs0pg1u7uksdta51aok3o6o7g3.apps.googleusercontent.com';
-const GOOGLE_HINT = 'cooperpooper1102@gmail.com';
-const DRIVE_FOLDER = 'Cooper Quiz';
-const DAPI = 'https://www.googleapis.com/drive/v3/', DUP = 'https://www.googleapis.com/upload/drive/v3/files';
-function loadScript(src) {
-  return new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.async = true; s.onload = res; s.onerror = () => rej(new Error('Could not load ' + src)); document.head.appendChild(s); });
-}
-const stripLocal = q => { const { driveId, driveFolder, sample, ...rest } = q; return rest; };
+/* ================= Google Drive sync (via the family's Apps Script helper) ================= */
+// The helper script runs in the family Google account and reads/writes the "Cooper Quiz" Drive folder.
+// Nobody signs in to Google: each device enters the family passcode once. Setup: apps-script/README.md
+const SCRIPT_URL = '';
 const Drive = {
-  token: null, exp: 0, client: null, pending: null, loading: null, syncing: null,
-  folderId: localStorage.getItem('cq-folder') || null,
-  get signedIn() { return !!this.token && Date.now() < this.exp; },
-  get wanted() { return localStorage.getItem('cq-drive') === '1'; },
-  restore() { try { const t = JSON.parse(localStorage.getItem('cq-tok') || 'null'); if (t && Date.now() < t.exp) { this.token = t.token; this.exp = t.exp; } } catch { } },
-  load() {
-    if (this.client) return Promise.resolve();
-    return this.loading || (this.loading = loadScript('https://accounts.google.com/gsi/client').then(() => {
-      this.client = google.accounts.oauth2.initTokenClient({
-        client_id: GOOGLE_CLIENT_ID, scope: 'https://www.googleapis.com/auth/drive.file',
-        callback: r => {
-          const p = this.pending; this.pending = null;
-          if (r.error) return p && p.reject(new Error(r.error));
-          this.token = r.access_token; this.exp = Date.now() + (Number(r.expires_in || 3600) - 120) * 1000;
-          localStorage.setItem('cq-tok', JSON.stringify({ token: this.token, exp: this.exp }));
-          localStorage.setItem('cq-drive', '1');
-          p && p.resolve();
-        },
-        error_callback: e => { const p = this.pending; this.pending = null; p && p.reject(new Error(e && e.type === 'popup_closed' ? 'Sign-in window was closed' : 'Sign-in failed')); },
-      });
-    }).catch(e => { this.loading = null; throw e; }));
+  syncing: null,
+  folderUrl: localStorage.getItem('cq-folderurl') || '',
+  get enabled() { return !!SCRIPT_URL; },
+  get pass() { return localStorage.getItem('cq-pass') || ''; },
+  get signedIn() { return !!(SCRIPT_URL && this.pass); },
+  async call(action, args = {}, pass = this.pass) {
+    let r;
+    try { r = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action, passcode: pass, ...args }) }); }
+    catch { throw new Error('Couldn’t reach Google Drive. Check your connection.'); }
+    if (!r.ok) throw new Error('Google Drive helper error ' + r.status);
+    let j; try { j = await r.json(); } catch { throw new Error('Google Drive helper sent a bad response'); }
+    if (j.error) throw new Error(j.error);
+    return j;
   },
-  signIn() { // must be called straight from a click so the popup is allowed
-    if (!this.client) { this.load(); return Promise.reject(new Error('Google sign-in is still loading. Try again in a second.')); }
-    return new Promise((resolve, reject) => {
-      this.pending = { resolve, reject };
-      this.client.requestAccessToken({ prompt: localStorage.getItem('cq-consented') ? '' : 'consent', hint: GOOGLE_HINT });
-    }).then(() => localStorage.setItem('cq-consented', '1'));
+  setUrl(u) { if (u) { this.folderUrl = u; localStorage.setItem('cq-folderurl', u); } },
+  async connect(pass) { const j = await this.call('list', {}, pass); localStorage.setItem('cq-pass', pass); this.setUrl(j.folderUrl); },
+  disconnect() { localStorage.removeItem('cq-pass'); },
+  async list() { const j = await this.call('list'); this.setUrl(j.folderUrl); return j.files || []; },
+  async download(id) { return JSON.parse((await this.call('get', { id })).data); },
+  async save(quiz) {
+    const j = await this.call('save', {
+      id: quiz.sid || '', cqid: quiz.id, updated: quiz.updated,
+      name: safeName(quiz.title || 'Untitled quiz') + '.cooperquiz.json',
+      content: JSON.stringify({ format: 'cooperquiz', version: 1, quiz: stripLocal(quiz) }),
+    });
+    return j.id;
   },
-  signOut() {
-    try { google.accounts.oauth2.revoke(this.token, () => { }); } catch { }
-    this.token = null; this.exp = 0; localStorage.removeItem('cq-tok'); localStorage.removeItem('cq-drive');
-  },
-  async api(url, opts = {}) {
-    if (!this.signedIn) throw new Error('signed-out');
-    const r = await fetch(url.startsWith('http') ? url : DAPI + url, { ...opts, headers: { Authorization: 'Bearer ' + this.token, ...(opts.headers || {}) } });
-    if (r.status === 401) { this.token = null; this.exp = 0; localStorage.removeItem('cq-tok'); throw new Error('signed-out'); }
-    if (!r.ok) { const e = new Error('Google Drive error ' + r.status); e.status = r.status; throw e; }
-    return r;
-  },
-  async folder() {
-    if (this.folderId) {
-      try { const j = await (await this.api(`files/${this.folderId}?fields=id,trashed`)).json(); if (!j.trashed) return this.folderId; }
-      catch (e) { if (e.message === 'signed-out') throw e; }
-    }
-    const q = encodeURIComponent(`mimeType='application/vnd.google-apps.folder' and name='${DRIVE_FOLDER}' and trashed=false`);
-    const j = await (await this.api(`files?q=${q}&fields=files(id)&spaces=drive`)).json();
-    let id = j.files && j.files[0] && j.files[0].id;
-    if (!id) id = (await (await this.api('files?fields=id', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: DRIVE_FOLDER, mimeType: 'application/vnd.google-apps.folder' }) })).json()).id;
-    this.folderId = id; localStorage.setItem('cq-folder', id);
-    return id;
-  },
-  async list(folder) {
-    const q = encodeURIComponent(`'${folder}' in parents and trashed=false`);
-    let files = [], pt = '';
-    do {
-      const j = await (await this.api(`files?q=${q}&fields=nextPageToken,files(id,name,appProperties)&pageSize=200${pt ? '&pageToken=' + pt : ''}`)).json();
-      files = files.concat(j.files || []); pt = j.nextPageToken;
-    } while (pt);
-    return files;
-  },
-  async download(id) { return (await this.api(`files/${id}?alt=media`)).json(); },
-  async save(quiz, folder) {
-    const body = JSON.stringify({ format: 'cooperquiz', version: 1, quiz: stripLocal(quiz) });
-    const meta = { name: safeName(quiz.title || 'Untitled quiz') + '.cooperquiz.json', mimeType: 'application/json', appProperties: { cqid: quiz.id, updated: String(quiz.updated) } };
-    const update = !!(quiz.driveId && quiz.driveFolder === folder);
-    if (!update) meta.parents = [folder];
-    const url = update ? `${DUP}/${quiz.driveId}` : DUP, method = update ? 'PATCH' : 'POST';
-    try {
-      if (body.length < 4.5e6) {
-        const b = 'cq' + Math.random().toString(36).slice(2);
-        const mp = `--${b}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(meta)}\r\n--${b}\r\nContent-Type: application/json\r\n\r\n${body}\r\n--${b}--`;
-        const j = await (await this.api(`${url}?uploadType=multipart&fields=id`, { method, headers: { 'Content-Type': `multipart/related; boundary=${b}` }, body: mp })).json();
-        return j.id;
-      }
-      const r = await this.api(`${url}?uploadType=resumable&fields=id`, { method, headers: { 'Content-Type': 'application/json; charset=UTF-8', 'X-Upload-Content-Type': 'application/json' }, body: JSON.stringify(meta) });
-      const loc = r.headers.get('Location'); if (!loc) throw new Error('Drive upload could not start');
-      return (await (await this.api(loc, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body })).json()).id;
-    } catch (e) {
-      if (update && e.status === 404) { quiz.driveId = null; return this.save(quiz, folder); }
-      throw e;
-    }
-  },
-  async trash(id) { await this.api(`files/${id}?fields=id`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ trashed: true }) }); },
+  async trash(id) { await this.call('trash', { id }); },
 };
-Drive.restore();
+const stripLocal = q => { const { sid, sample, driveId, driveFolder, ...rest } = q; return rest; };
 const tomb = { get: () => { try { return JSON.parse(localStorage.getItem('cq-deleted') || '[]'); } catch { return []; } }, set: a => localStorage.setItem('cq-deleted', JSON.stringify(a)) };
 // Two-way sync: newest copy wins, matched by quiz id. Returns true if anything local changed.
 async function syncDrive() {
@@ -526,43 +463,39 @@ async function syncDrive() {
   if (Drive.syncing) return Drive.syncing;
   return Drive.syncing = (async () => {
     let changed = false;
-    const folder = await Drive.folder();
     const dead = tomb.get();
-    for (const id of dead) { try { await Drive.trash(id); } catch (e) { if (e.message === 'signed-out') throw e; } }
+    for (const id of dead) { try { await Drive.trash(id); } catch (e) { if (e.message === 'passcode') throw e; } }
     tomb.set([]);
-    const remote = (await Drive.list(folder)).filter(f => !dead.includes(f.id));
+    const remote = (await Drive.list()).filter(f => !dead.includes(f.id));
     const local = await DB.all(), byId = new Map(local.map(q => [q.id, q])), seen = new Set();
     for (const f of remote) {
-      const id = f.appProperties && f.appProperties.cqid; if (!id || seen.has(id)) continue;
+      const id = f.cqid; if (!id || seen.has(id)) continue;
       seen.add(id);
-      const ru = +(f.appProperties.updated || 0), l = byId.get(id);
+      const ru = +(f.updated || 0), l = byId.get(id);
       if (!l || ru > l.updated) {
         const q = normalizeQuiz(await Drive.download(f.id));
-        Object.assign(q, { id, updated: ru || Date.now(), driveId: f.id, driveFolder: folder });
+        Object.assign(q, { id, updated: ru || Date.now(), sid: f.id });
         await DB.put(q); changed = true;
       } else if (l.updated > ru) {
-        Object.assign(l, { driveId: f.id, driveFolder: folder }); l.driveId = await Drive.save(l, folder); await DB.put(l);
-      } else if (l.driveId !== f.id || l.driveFolder !== folder) {
-        Object.assign(l, { driveId: f.id, driveFolder: folder }); await DB.put(l);
-      }
+        l.sid = f.id; l.sid = await Drive.save(l); await DB.put(l);
+      } else if (l.sid !== f.id) { l.sid = f.id; await DB.put(l); }
     }
     for (const l of local) {
       if (seen.has(l.id) || l.sample) continue;
-      if (l.driveId && l.driveFolder === folder) { await DB.del(l.id); changed = true; } // deleted on another device
-      else { l.driveId = await Drive.save(l, folder); l.driveFolder = folder; await DB.put(l); }
+      if (l.sid) { await DB.del(l.id); changed = true; } // deleted on another device
+      else { l.sid = await Drive.save(l); await DB.put(l); }
     }
     return changed;
   })().finally(() => { Drive.syncing = null; });
 }
 async function pushQuiz(quiz) {
   if (!Drive.signedIn || quiz.sample) return false;
-  const folder = await Drive.folder();
-  quiz.driveId = await Drive.save(quiz, folder); quiz.driveFolder = folder;
+  quiz.sid = await Drive.save(quiz);
   await DB.put(quiz);
   return true;
 }
 function driveErr(e) {
-  if (e.message === 'signed-out') { toast('Google sign-in expired. Tap "Sign in to Google Drive" to keep syncing.', 4000); return 'Saved on this device'; }
+  if (e.message === 'passcode') { Drive.disconnect(); toast('The family passcode didn’t work. Tap “Connect Google Drive” and enter it again.', 4500); return 'Saved on this device'; }
   toast(e.message || 'Google Drive sync failed', 4000); return 'Drive sync failed';
 }
 
@@ -651,7 +584,6 @@ function showHome(prefill = '') {
 /* ================= Library ================= */
 async function showLibrary(noSync) {
   wake(false);
-  Drive.load().catch(() => { });
   let quizzes = [];
   try {
     quizzes = await DB.all();
@@ -664,8 +596,8 @@ async function showLibrary(noSync) {
   <div class="screen">
     <header class="topbar">
       <button class="brand" id="home">Cooper Quiz</button><div class="sp"></div>
-      ${Drive.signedIn ? `<a class="btn small dark" id="drv" href="https://drive.google.com/drive/folders/${esc(Drive.folderId || '')}" target="_blank" rel="noopener">☁ Drive folder</a>`
-        : `<button class="btn small dark" id="drv">☁ Sign in to Google Drive</button>`}
+      ${!Drive.enabled ? '' : Drive.signedIn ? `<a class="btn small dark" id="drv" href="${esc(Drive.folderUrl || 'https://drive.google.com')}" target="_blank" rel="noopener">☁ Drive folder</a>`
+        : `<button class="btn small dark" id="drv">☁ Connect Google Drive</button>`}
       <button class="btn small gray" id="imp">Import</button>
       <button class="btn small primary" id="new">+ New quiz</button>
     </header>
@@ -688,21 +620,26 @@ async function showLibrary(noSync) {
       }).join('')}
       </div>
       <p class="muted small" style="margin-top:28px" id="syncNote">${Drive.signedIn
-        ? `Synced with the “${DRIVE_FOLDER}” folder in your Google Drive. Sign in on any device to see the same quizzes. <a href="#" id="signout">Sign out</a>`
-        : 'Quizzes are saved on this device only. Sign in to Google Drive to keep them in a Drive folder and use them on any device.'}</p>
+        ? `Synced with the “Cooper Quiz” folder in Google Drive. Any device with the family passcode sees and edits the same quizzes. <a href="#" id="signout">Disconnect this device</a>`
+        : Drive.enabled ? 'Quizzes are saved on this device only. Tap “Connect Google Drive” and enter the family passcode to sync them with the Cooper Quiz folder in Drive.'
+        : 'Quizzes are saved on this device. Use Export to back them up or move them to another computer.'}</p>
     </main>
     <input type="file" id="impFile" accept=".json,application/json" hidden>
   </div>`;
   $('#home').onclick = () => showHome();
   $('#new').onclick = () => showEditor(null);
-  if (!Drive.signedIn) $('#drv').onclick = () => Drive.signIn().then(() => { toast('Signed in. Syncing your quizzes…'); return showLibrary(); }).catch(e => toast(e.message));
-  if ($('#signout')) $('#signout').onclick = e => { e.preventDefault(); Drive.signOut(); toast('Signed out of Google Drive'); showLibrary(true); };
+  if (Drive.enabled && !Drive.signedIn) $('#drv').onclick = async () => {
+    const pass = (prompt('Enter the family passcode') || '').trim(); if (!pass) return;
+    $('#drv').disabled = true; $('#drv').textContent = 'Connecting…';
+    try { await Drive.connect(pass); toast('Connected. Syncing your quizzes…'); showLibrary(); }
+    catch (e) { toast(e.message === 'passcode' ? 'That passcode didn’t work' : e.message, 3500); showLibrary(true); }
+  };
+  if ($('#signout')) $('#signout').onclick = e => { e.preventDefault(); if (confirm('Disconnect this device from Google Drive? Quizzes stay in Drive.')) { Drive.disconnect(); showLibrary(true); } };
   if (Drive.signedIn && !noSync) {
     const note = $('#syncNote'); note.textContent = 'Syncing with Google Drive…';
     syncDrive().catch(driveErr).finally(() => { if ($('#syncNote') === note) showLibrary(true); });
-  } else if (!Drive.signedIn && Drive.wanted && !noSync) {
-    $('#syncNote').textContent = 'Your Google sign-in expired. Tap “Sign in to Google Drive” to sync.';
   }
+
   $('#imp').onclick = () => $('#impFile').click();
   $('#impFile').onchange = async e => {
     const f = e.target.files[0]; if (!f) return;
@@ -726,9 +663,9 @@ async function showLibrary(noSync) {
     } else if (act === 'export') {
       download(safeName(quiz.title) + '.cooperquiz.json', JSON.stringify({ format: 'cooperquiz', version: 1, quiz: stripLocal(quiz) }), 'application/json');
     } else if (act === 'del') {
-      if (confirm(`Delete "${quiz.title || 'Untitled quiz'}"?${quiz.driveId ? ' It will also move to the trash in Google Drive.' : ''}`)) {
+      if (confirm(`Delete "${quiz.title || 'Untitled quiz'}"?${quiz.sid ? ' It will also move to the trash in Google Drive.' : ''}`)) {
         await DB.del(id);
-        if (quiz.driveId) { if (Drive.signedIn) await Drive.trash(quiz.driveId).catch(e => { tomb.set([...tomb.get(), quiz.driveId]); driveErr(e); }); else tomb.set([...tomb.get(), quiz.driveId]); }
+        if (quiz.sid) { if (Drive.signedIn) await Drive.trash(quiz.sid).catch(e => { tomb.set([...tomb.get(), quiz.sid]); driveErr(e); }); else tomb.set([...tomb.get(), quiz.sid]); }
         showLibrary(true);
       }
     }
@@ -805,7 +742,7 @@ function renderEditor() {
     <header class="topbar">
       <button class="btn small gray" id="back">← Quizzes</button>
       <input class="titlein" id="title" maxlength="120" placeholder="Quiz title" value="${esc(quiz.title)}">
-      <span class="muted small" id="saveState">${Drive.signedIn && quiz.driveId ? 'Saved to Drive' : 'Saved'}</span>
+      <span class="muted small" id="saveState">${Drive.signedIn && quiz.sid ? 'Saved to Drive' : 'Saved'}</span>
       <button class="btn small green" id="host">Host game</button>
     </header>
     <main class="wrap" id="edmain">
