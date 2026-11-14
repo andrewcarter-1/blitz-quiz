@@ -424,7 +424,7 @@ const DB = {
 /* ================= Google Drive sync (via the family's Apps Script helper) ================= */
 // The helper script runs in the family Google account and reads/writes the "Cooper Quiz" Drive folder.
 // Nobody signs in to Google: each device enters the family passcode once. Setup: apps-script/README.md
-const SCRIPT_URL = '';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwjkeTJnXX1R37leUuA0DSsasc2ntr0bDy7EtVVNPR8Da7sLWucHvvDBizm__iyylcr/exec';
 const Drive = {
   syncing: null,
   folderUrl: localStorage.getItem('cq-folderurl') || '',
