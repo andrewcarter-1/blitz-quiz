@@ -468,11 +468,12 @@ async function syncDrive() {
     tomb.set([]);
     const remote = (await Drive.list()).filter(f => !dead.includes(f.id));
     const local = await DB.all(), byId = new Map(local.map(q => [q.id, q])), seen = new Set();
+    const refresh = localStorage.getItem('cq-syncv') !== '2'; // one-time re-download after the image-timestamp fix
     for (const f of remote) {
       const id = f.cqid; if (!id || seen.has(id)) continue;
       seen.add(id);
       const ru = +(f.updated || 0), l = byId.get(id);
-      if (!l || ru > l.updated) {
+      if (!l || ru > l.updated || (refresh && ru === l.updated)) {
         const q = normalizeQuiz(await Drive.download(f.id));
         Object.assign(q, { id, updated: ru || Date.now(), sid: f.id });
         await DB.put(q); changed = true;
@@ -485,6 +486,7 @@ async function syncDrive() {
       if (l.sid) { await DB.del(l.id); changed = true; } // deleted on another device
       else { l.sid = await Drive.save(l); await DB.put(l); }
     }
+    localStorage.setItem('cq-lastsync', String(Date.now())); localStorage.setItem('cq-syncv', '2');
     return changed;
   })().finally(() => { Drive.syncing = null; });
 }
@@ -592,12 +594,14 @@ async function showLibrary(noSync) {
     }
   } catch (e) { toast('Storage unavailable: ' + e.message); }
   quizzes.sort((a, b) => b.updated - a.updated);
+  const keepY = $('#syncNote') ? window.scrollY : 0;
   app.innerHTML = `
   <div class="screen">
     <header class="topbar">
       <button class="brand" id="home">Cooper Quiz</button><div class="sp"></div>
       ${!Drive.enabled ? '' : Drive.signedIn ? `<a class="btn small dark" id="drv" href="${esc(Drive.folderUrl || 'https://drive.google.com')}" target="_blank" rel="noopener">☁ Drive folder</a>`
         : `<button class="btn small dark" id="drv">☁ Connect Google Drive</button>`}
+      ${Drive.signedIn ? '<button class="btn small gray" id="sync" title="Get the latest from Google Drive">↻ Sync</button>' : ''}
       <button class="btn small gray" id="imp">Import</button>
       <button class="btn small primary" id="new">+ New quiz</button>
     </header>
@@ -620,14 +624,16 @@ async function showLibrary(noSync) {
       }).join('')}
       </div>
       <p class="muted small" style="margin-top:28px" id="syncNote">${Drive.signedIn
-        ? `Synced with the “Cooper Quiz” folder in Google Drive. Any device with the family passcode sees and edits the same quizzes. <a href="#" id="signout">Disconnect this device</a>`
+        ? `Synced with the “Cooper Quiz” folder in Google Drive. Any device with the family passcode sees and edits the same quizzes.${localStorage.getItem('cq-lastsync') ? ' Last synced ' + new Date(+localStorage.getItem('cq-lastsync')).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) + '.' : ''} <a href="#" id="signout">Disconnect this device</a>`
         : Drive.enabled ? 'Quizzes are saved on this device only. Tap “Connect Google Drive” and enter the family passcode to sync them with the Cooper Quiz folder in Drive.'
         : 'Quizzes are saved on this device. Use Export to back them up or move them to another computer.'}</p>
     </main>
     <input type="file" id="impFile" accept=".json,application/json" hidden>
   </div>`;
+  if (keepY) window.scrollTo(0, keepY);
   $('#home').onclick = () => showHome();
   $('#new').onclick = () => showEditor(null);
+  if ($('#sync')) $('#sync').onclick = () => showLibrary();
   if (Drive.enabled && !Drive.signedIn) $('#drv').onclick = async () => {
     const pass = (prompt('Enter the family passcode') || '').trim(); if (!pass) return;
     $('#drv').disabled = true; $('#drv').textContent = 'Connecting…';
@@ -636,15 +642,29 @@ async function showLibrary(noSync) {
   };
   if ($('#signout')) $('#signout').onclick = e => { e.preventDefault(); if (confirm('Disconnect this device from Google Drive? Quizzes stay in Drive.')) { Drive.disconnect(); showLibrary(true); } };
   if (Drive.signedIn && !noSync) {
-    const note = $('#syncNote'); note.textContent = 'Syncing with Google Drive…';
-    syncDrive().catch(driveErr).finally(() => { if ($('#syncNote') === note) showLibrary(true); });
+    const note = $('#syncNote'), was = note.innerHTML, sb = $('#sync');
+    note.textContent = 'Syncing with Google Drive…'; if (sb) sb.disabled = true;
+    syncDrive().then(changed => {
+      if ($('#syncNote') !== note) return;
+      if (changed) return showLibrary(true);
+      note.innerHTML = was.replace(/Last synced [^.]*\./, 'Last synced ' + new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) + '.');
+      if (!/Last synced/.test(was)) return showLibrary(true);
+      if (sb) sb.disabled = false;
+      $('#signout').onclick = e => { e.preventDefault(); if (confirm('Disconnect this device from Google Drive? Quizzes stay in Drive.')) { Drive.disconnect(); showLibrary(true); } };
+    }).catch(e => { driveErr(e); if ($('#syncNote') === note) showLibrary(true); });
   }
 
   $('#imp').onclick = () => $('#impFile').click();
   $('#impFile').onchange = async e => {
     const f = e.target.files[0]; if (!f) return;
     try {
-      const q = normalizeQuiz(JSON.parse(await f.text())); await DB.put(q); toast(`Imported "${q.title}"`);
+      const q = normalizeQuiz(JSON.parse(await f.text()));
+      const same = (await DB.all()).find(x => (x.title || '').trim().toLowerCase() === (q.title || '').trim().toLowerCase());
+      if (same) {
+        if (!confirm(`You already have a quiz named "${same.title}". Replace it with this file? (Cancel keeps both.)`)) same.keep = true;
+        else { q.id = same.id; q.sid = same.sid; }
+      }
+      await DB.put(q); toast(`Imported "${q.title}"`);
       if (Drive.signedIn) await pushQuiz(q).catch(driveErr);
       showLibrary(true);
     }
@@ -652,11 +672,15 @@ async function showLibrary(noSync) {
   };
   $('.qlist').onclick = async e => {
     const b = e.target.closest('[data-act]'); if (!b) return;
-    const id = b.closest('.qitem').dataset.id, quiz = await DB.get(id);
+    const id = b.closest('.qitem').dataset.id; let quiz = await DB.get(id);
     if (!quiz) return;
     const act = b.dataset.act;
-    if (act === 'edit') showEditor(id);
+    if (act === 'edit') {
+      if (Drive.signedIn) { b.disabled = true; b.textContent = 'Syncing…'; try { await Promise.race([syncDrive(), new Promise(r => setTimeout(r, 8000))]); } catch (e) { driveErr(e); } }
+      if (await DB.get(id)) showEditor(id); else { toast('That quiz was deleted on another device'); showLibrary(true); }
+    }
     else if (act === 'host') {
+      if (Drive.signedIn) { b.disabled = true; b.textContent = 'Syncing…'; try { await Promise.race([syncDrive(), new Promise(r => setTimeout(r, 8000))]); } catch (e) { driveErr(e); } quiz = (await DB.get(id)) || quiz; }
       const errs = validate(quiz);
       if (errs.length) { toast('Fix this quiz before hosting'); return showEditor(id, errs); }
       hostStart(quiz);
@@ -671,6 +695,10 @@ async function showLibrary(noSync) {
     }
   };
 }
+
+function autoSync() { if (Drive.signedIn && !document.hidden && $('#syncNote') && !Drive.syncing) showLibrary(); }
+document.addEventListener('visibilitychange', autoSync);
+setInterval(autoSync, 60000);
 
 /* ================= Editor ================= */
 let ED = null;
@@ -818,7 +846,7 @@ function renderEditor() {
   };
 }
 async function setImage(q, i, file) {
-  try { q.image = await compressImage(file); await saveNow(); refreshCard(i); }
+  try { q.image = await compressImage(file); ED.quiz.updated = Date.now(); delete ED.quiz.sample; await saveNow(); refreshCard(i); }
   catch (err) { toast(err.message || 'Image failed'); }
 }
 function refreshCard(i) {
