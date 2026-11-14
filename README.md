@@ -12,6 +12,7 @@ A live multiplayer quiz game: host on a big screen, players join from their phon
 - Image per question (auto-resized), timers from 5 seconds to 4 minutes
 - Speed-based scoring (500–1,000 points) with answer streak bonus (up to +500)
 - Live answer chart, scoreboard, podium, and CSV results download
+- Original game-show music and sound effects on the host screen, generated live in the browser (toggle with the Music button or M)
 - Players can refresh or reconnect mid-game and keep their score
 - Quizzes save in the host's browser (IndexedDB); Export/Import as `.json` to back up or move them
 
