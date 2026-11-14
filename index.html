@@ -421,6 +421,151 @@ const DB = {
   del(id) { return this.run('readwrite', s => s.delete(id)); },
 };
 
+/* ================= Google Drive sync ================= */
+// Same Google Cloud OAuth client as the Reader app (same github.io origin). drive.file scope:
+// the app can only see files it created, i.e. its own "Cooper Quiz" folder.
+const GOOGLE_CLIENT_ID = '448915274422-om13evvs0pg1u7uksdta51aok3o6o7g3.apps.googleusercontent.com';
+const GOOGLE_HINT = 'cooperpooper1102@gmail.com';
+const DRIVE_FOLDER = 'Cooper Quiz';
+const DAPI = 'https://www.googleapis.com/drive/v3/', DUP = 'https://www.googleapis.com/upload/drive/v3/files';
+function loadScript(src) {
+  return new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.async = true; s.onload = res; s.onerror = () => rej(new Error('Could not load ' + src)); document.head.appendChild(s); });
+}
+const stripLocal = q => { const { driveId, driveFolder, sample, ...rest } = q; return rest; };
+const Drive = {
+  token: null, exp: 0, client: null, pending: null, loading: null, syncing: null,
+  folderId: localStorage.getItem('cq-folder') || null,
+  get signedIn() { return !!this.token && Date.now() < this.exp; },
+  get wanted() { return localStorage.getItem('cq-drive') === '1'; },
+  restore() { try { const t = JSON.parse(localStorage.getItem('cq-tok') || 'null'); if (t && Date.now() < t.exp) { this.token = t.token; this.exp = t.exp; } } catch { } },
+  load() {
+    if (this.client) return Promise.resolve();
+    return this.loading || (this.loading = loadScript('https://accounts.google.com/gsi/client').then(() => {
+      this.client = google.accounts.oauth2.initTokenClient({
+        client_id: GOOGLE_CLIENT_ID, scope: 'https://www.googleapis.com/auth/drive.file',
+        callback: r => {
+          const p = this.pending; this.pending = null;
+          if (r.error) return p && p.reject(new Error(r.error));
+          this.token = r.access_token; this.exp = Date.now() + (Number(r.expires_in || 3600) - 120) * 1000;
+          localStorage.setItem('cq-tok', JSON.stringify({ token: this.token, exp: this.exp }));
+          localStorage.setItem('cq-drive', '1');
+          p && p.resolve();
+        },
+        error_callback: e => { const p = this.pending; this.pending = null; p && p.reject(new Error(e && e.type === 'popup_closed' ? 'Sign-in window was closed' : 'Sign-in failed')); },
+      });
+    }).catch(e => { this.loading = null; throw e; }));
+  },
+  signIn() { // must be called straight from a click so the popup is allowed
+    if (!this.client) { this.load(); return Promise.reject(new Error('Google sign-in is still loading. Try again in a second.')); }
+    return new Promise((resolve, reject) => {
+      this.pending = { resolve, reject };
+      this.client.requestAccessToken({ prompt: localStorage.getItem('cq-consented') ? '' : 'consent', hint: GOOGLE_HINT });
+    }).then(() => localStorage.setItem('cq-consented', '1'));
+  },
+  signOut() {
+    try { google.accounts.oauth2.revoke(this.token, () => { }); } catch { }
+    this.token = null; this.exp = 0; localStorage.removeItem('cq-tok'); localStorage.removeItem('cq-drive');
+  },
+  async api(url, opts = {}) {
+    if (!this.signedIn) throw new Error('signed-out');
+    const r = await fetch(url.startsWith('http') ? url : DAPI + url, { ...opts, headers: { Authorization: 'Bearer ' + this.token, ...(opts.headers || {}) } });
+    if (r.status === 401) { this.token = null; this.exp = 0; localStorage.removeItem('cq-tok'); throw new Error('signed-out'); }
+    if (!r.ok) { const e = new Error('Google Drive error ' + r.status); e.status = r.status; throw e; }
+    return r;
+  },
+  async folder() {
+    if (this.folderId) {
+      try { const j = await (await this.api(`files/${this.folderId}?fields=id,trashed`)).json(); if (!j.trashed) return this.folderId; }
+      catch (e) { if (e.message === 'signed-out') throw e; }
+    }
+    const q = encodeURIComponent(`mimeType='application/vnd.google-apps.folder' and name='${DRIVE_FOLDER}' and trashed=false`);
+    const j = await (await this.api(`files?q=${q}&fields=files(id)&spaces=drive`)).json();
+    let id = j.files && j.files[0] && j.files[0].id;
+    if (!id) id = (await (await this.api('files?fields=id', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: DRIVE_FOLDER, mimeType: 'application/vnd.google-apps.folder' }) })).json()).id;
+    this.folderId = id; localStorage.setItem('cq-folder', id);
+    return id;
+  },
+  async list(folder) {
+    const q = encodeURIComponent(`'${folder}' in parents and trashed=false`);
+    let files = [], pt = '';
+    do {
+      const j = await (await this.api(`files?q=${q}&fields=nextPageToken,files(id,name,appProperties)&pageSize=200${pt ? '&pageToken=' + pt : ''}`)).json();
+      files = files.concat(j.files || []); pt = j.nextPageToken;
+    } while (pt);
+    return files;
+  },
+  async download(id) { return (await this.api(`files/${id}?alt=media`)).json(); },
+  async save(quiz, folder) {
+    const body = JSON.stringify({ format: 'cooperquiz', version: 1, quiz: stripLocal(quiz) });
+    const meta = { name: safeName(quiz.title || 'Untitled quiz') + '.cooperquiz.json', mimeType: 'application/json', appProperties: { cqid: quiz.id, updated: String(quiz.updated) } };
+    const update = !!(quiz.driveId && quiz.driveFolder === folder);
+    if (!update) meta.parents = [folder];
+    const url = update ? `${DUP}/${quiz.driveId}` : DUP, method = update ? 'PATCH' : 'POST';
+    try {
+      if (body.length < 4.5e6) {
+        const b = 'cq' + Math.random().toString(36).slice(2);
+        const mp = `--${b}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(meta)}\r\n--${b}\r\nContent-Type: application/json\r\n\r\n${body}\r\n--${b}--`;
+        const j = await (await this.api(`${url}?uploadType=multipart&fields=id`, { method, headers: { 'Content-Type': `multipart/related; boundary=${b}` }, body: mp })).json();
+        return j.id;
+      }
+      const r = await this.api(`${url}?uploadType=resumable&fields=id`, { method, headers: { 'Content-Type': 'application/json; charset=UTF-8', 'X-Upload-Content-Type': 'application/json' }, body: JSON.stringify(meta) });
+      const loc = r.headers.get('Location'); if (!loc) throw new Error('Drive upload could not start');
+      return (await (await this.api(loc, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body })).json()).id;
+    } catch (e) {
+      if (update && e.status === 404) { quiz.driveId = null; return this.save(quiz, folder); }
+      throw e;
+    }
+  },
+  async trash(id) { await this.api(`files/${id}?fields=id`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ trashed: true }) }); },
+};
+Drive.restore();
+const tomb = { get: () => { try { return JSON.parse(localStorage.getItem('cq-deleted') || '[]'); } catch { return []; } }, set: a => localStorage.setItem('cq-deleted', JSON.stringify(a)) };
+// Two-way sync: newest copy wins, matched by quiz id. Returns true if anything local changed.
+async function syncDrive() {
+  if (!Drive.signedIn) return false;
+  if (Drive.syncing) return Drive.syncing;
+  return Drive.syncing = (async () => {
+    let changed = false;
+    const folder = await Drive.folder();
+    const dead = tomb.get();
+    for (const id of dead) { try { await Drive.trash(id); } catch (e) { if (e.message === 'signed-out') throw e; } }
+    tomb.set([]);
+    const remote = (await Drive.list(folder)).filter(f => !dead.includes(f.id));
+    const local = await DB.all(), byId = new Map(local.map(q => [q.id, q])), seen = new Set();
+    for (const f of remote) {
+      const id = f.appProperties && f.appProperties.cqid; if (!id || seen.has(id)) continue;
+      seen.add(id);
+      const ru = +(f.appProperties.updated || 0), l = byId.get(id);
+      if (!l || ru > l.updated) {
+        const q = normalizeQuiz(await Drive.download(f.id));
+        Object.assign(q, { id, updated: ru || Date.now(), driveId: f.id, driveFolder: folder });
+        await DB.put(q); changed = true;
+      } else if (l.updated > ru) {
+        Object.assign(l, { driveId: f.id, driveFolder: folder }); l.driveId = await Drive.save(l, folder); await DB.put(l);
+      } else if (l.driveId !== f.id || l.driveFolder !== folder) {
+        Object.assign(l, { driveId: f.id, driveFolder: folder }); await DB.put(l);
+      }
+    }
+    for (const l of local) {
+      if (seen.has(l.id) || l.sample) continue;
+      if (l.driveId && l.driveFolder === folder) { await DB.del(l.id); changed = true; } // deleted on another device
+      else { l.driveId = await Drive.save(l, folder); l.driveFolder = folder; await DB.put(l); }
+    }
+    return changed;
+  })().finally(() => { Drive.syncing = null; });
+}
+async function pushQuiz(quiz) {
+  if (!Drive.signedIn || quiz.sample) return false;
+  const folder = await Drive.folder();
+  quiz.driveId = await Drive.save(quiz, folder); quiz.driveFolder = folder;
+  await DB.put(quiz);
+  return true;
+}
+function driveErr(e) {
+  if (e.message === 'signed-out') { toast('Google sign-in expired. Tap "Sign in to Google Drive" to keep syncing.', 4000); return 'Saved on this device'; }
+  toast(e.message || 'Google Drive sync failed', 4000); return 'Drive sync failed';
+}
+
 /* ================= Quiz model ================= */
 function newQuestion(type = 'mc') {
   return { id: uid(), text: '', image: null, type, time: type === 'tf' ? 10 : 20,
@@ -504,13 +649,14 @@ function showHome(prefill = '') {
 }
 
 /* ================= Library ================= */
-async function showLibrary() {
+async function showLibrary(noSync) {
   wake(false);
+  Drive.load().catch(() => { });
   let quizzes = [];
   try {
     quizzes = await DB.all();
     if (!quizzes.length && !localStorage.getItem('bq-seeded')) {
-      const s = normalizeQuiz(SAMPLE); await DB.put(s); quizzes = [s]; localStorage.setItem('bq-seeded', '1');
+      const s = normalizeQuiz(SAMPLE); s.sample = true; await DB.put(s); quizzes = [s]; localStorage.setItem('bq-seeded', '1');
     }
   } catch (e) { toast('Storage unavailable: ' + e.message); }
   quizzes.sort((a, b) => b.updated - a.updated);
@@ -518,6 +664,8 @@ async function showLibrary() {
   <div class="screen">
     <header class="topbar">
       <button class="brand" id="home">Cooper Quiz</button><div class="sp"></div>
+      ${Drive.signedIn ? `<a class="btn small dark" id="drv" href="https://drive.google.com/drive/folders/${esc(Drive.folderId || '')}" target="_blank" rel="noopener">☁ Drive folder</a>`
+        : `<button class="btn small dark" id="drv">☁ Sign in to Google Drive</button>`}
       <button class="btn small gray" id="imp">Import</button>
       <button class="btn small primary" id="new">+ New quiz</button>
     </header>
@@ -539,16 +687,30 @@ async function showLibrary() {
           </div></div>`;
       }).join('')}
       </div>
-      <p class="muted small" style="margin-top:28px">Quizzes are saved in this browser. Use Export to back them up or move them to another computer.</p>
+      <p class="muted small" style="margin-top:28px" id="syncNote">${Drive.signedIn
+        ? `Synced with the “${DRIVE_FOLDER}” folder in your Google Drive. Sign in on any device to see the same quizzes. <a href="#" id="signout">Sign out</a>`
+        : 'Quizzes are saved on this device only. Sign in to Google Drive to keep them in a Drive folder and use them on any device.'}</p>
     </main>
     <input type="file" id="impFile" accept=".json,application/json" hidden>
   </div>`;
   $('#home').onclick = () => showHome();
   $('#new').onclick = () => showEditor(null);
+  if (!Drive.signedIn) $('#drv').onclick = () => Drive.signIn().then(() => { toast('Signed in. Syncing your quizzes…'); return showLibrary(); }).catch(e => toast(e.message));
+  if ($('#signout')) $('#signout').onclick = e => { e.preventDefault(); Drive.signOut(); toast('Signed out of Google Drive'); showLibrary(true); };
+  if (Drive.signedIn && !noSync) {
+    const note = $('#syncNote'); note.textContent = 'Syncing with Google Drive…';
+    syncDrive().catch(driveErr).finally(() => { if ($('#syncNote') === note) showLibrary(true); });
+  } else if (!Drive.signedIn && Drive.wanted && !noSync) {
+    $('#syncNote').textContent = 'Your Google sign-in expired. Tap “Sign in to Google Drive” to sync.';
+  }
   $('#imp').onclick = () => $('#impFile').click();
   $('#impFile').onchange = async e => {
     const f = e.target.files[0]; if (!f) return;
-    try { const q = normalizeQuiz(JSON.parse(await f.text())); await DB.put(q); toast(`Imported "${q.title}"`); showLibrary(); }
+    try {
+      const q = normalizeQuiz(JSON.parse(await f.text())); await DB.put(q); toast(`Imported "${q.title}"`);
+      if (Drive.signedIn) await pushQuiz(q).catch(driveErr);
+      showLibrary(true);
+    }
     catch (err) { toast(err.message || 'Import failed'); }
   };
   $('.qlist').onclick = async e => {
@@ -562,9 +724,13 @@ async function showLibrary() {
       if (errs.length) { toast('Fix this quiz before hosting'); return showEditor(id, errs); }
       hostStart(quiz);
     } else if (act === 'export') {
-      download(safeName(quiz.title) + '.cooperquiz.json', JSON.stringify({ format: 'cooperquiz', version: 1, quiz }), 'application/json');
+      download(safeName(quiz.title) + '.cooperquiz.json', JSON.stringify({ format: 'cooperquiz', version: 1, quiz: stripLocal(quiz) }), 'application/json');
     } else if (act === 'del') {
-      if (confirm(`Delete "${quiz.title || 'Untitled quiz'}"? This can't be undone.`)) { await DB.del(id); showLibrary(); }
+      if (confirm(`Delete "${quiz.title || 'Untitled quiz'}"?${quiz.driveId ? ' It will also move to the trash in Google Drive.' : ''}`)) {
+        await DB.del(id);
+        if (quiz.driveId) { if (Drive.signedIn) await Drive.trash(quiz.driveId).catch(e => { tomb.set([...tomb.get(), quiz.driveId]); driveErr(e); }); else tomb.set([...tomb.get(), quiz.driveId]); }
+        showLibrary(true);
+      }
     }
   };
 }
@@ -581,15 +747,25 @@ async function showEditor(id, errs) {
 }
 function setSaveState(t) { const el = $('#saveState'); if (el) el.textContent = t; }
 function saveSoon() {
-  ED.quiz.updated = Date.now(); setSaveState('Saving…');
+  ED.quiz.updated = Date.now(); delete ED.quiz.sample; setSaveState('Saving…');
   clearTimeout(ED.saveT);
   ED.saveT = setTimeout(saveNow, 400);
 }
 async function saveNow() {
   clearTimeout(ED.saveT);
-  try { await DB.put(ED.quiz); setSaveState('Saved'); }
-  catch (e) { setSaveState('Not saved'); toast('Save failed: ' + (e.message || e)); }
+  try { await DB.put(ED.quiz); setSaveState(Drive.signedIn ? 'Saving to Drive…' : 'Saved'); }
+  catch (e) { setSaveState('Not saved'); toast('Save failed: ' + (e.message || e)); return; }
+  if (Drive.signedIn) { clearTimeout(ED.driveT); ED.driveT = setTimeout(drivePush, 1500); }
 }
+async function drivePush() {
+  clearTimeout(ED.driveT);
+  if (!ED || !Drive.signedIn) return;
+  const quiz = ED.quiz, stamp = quiz.updated;
+  if (ED.pushed === stamp) return;
+  try { await pushQuiz(quiz); ED.pushed = stamp; if (ED && ED.quiz === quiz && quiz.updated === stamp) setSaveState('Saved to Drive'); }
+  catch (e) { setSaveState(driveErr(e)); }
+}
+async function leaveEditor() { await saveNow(); if (Drive.signedIn) await drivePush(); }
 function qCard(q, i, n) {
   const nCorrect = q.answers.filter(a => a.correct).length;
   const hint = q.type === 'tf' ? 'Tap the check to mark the correct answer.'
@@ -629,7 +805,7 @@ function renderEditor() {
     <header class="topbar">
       <button class="btn small gray" id="back">← Quizzes</button>
       <input class="titlein" id="title" maxlength="120" placeholder="Quiz title" value="${esc(quiz.title)}">
-      <span class="muted small" id="saveState">Saved</span>
+      <span class="muted small" id="saveState">${Drive.signedIn && quiz.driveId ? 'Saved to Drive' : 'Saved'}</span>
       <button class="btn small green" id="host">Host game</button>
     </header>
     <main class="wrap" id="edmain">
@@ -640,10 +816,10 @@ function renderEditor() {
   </div>`;
   window.scrollTo(0, sy);
   const main = $('#edmain');
-  $('#back').onclick = async () => { await saveNow(); showLibrary(); };
+  $('#back').onclick = async () => { await leaveEditor(); showLibrary(); };
   $('#title').oninput = e => { quiz.title = e.target.value; saveSoon(); };
   $('#host').onclick = async () => {
-    await saveNow();
+    await leaveEditor();
     const errs = validate(quiz);
     if (errs.length) { ED.errs = errs; renderEditor(); window.scrollTo(0, 0); return; }
     hostStart(quiz);

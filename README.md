@@ -14,7 +14,8 @@ A live multiplayer quiz game: host on a big screen, players join from their phon
 - Live answer chart, scoreboard, podium, and CSV results download
 - Original fantasy-style music and sound effects (folk flute, harp, war drums, horns) on the host screen, generated live in the browser (toggle with the Music button or M)
 - Players can refresh or reconnect mid-game and keep their score
-- Quizzes save in the host's browser (IndexedDB); Export/Import as `.json` to back up or move them
+- Optional Google Drive sync: sign in once and quizzes (with images) save to a **Cooper Quiz** folder in Drive and appear on any device that signs in. Uses the same Google Cloud OAuth client as the Reader app (`drive.file` scope, so the app only sees its own folder)
+- Without signing in, quizzes save in the host's browser; Export/Import as `.json` to back up or move them
 
 ## How it works
 Single static page (`index.html`). Players connect directly to the host browser over WebRTC via [PeerJS](https://peerjs.com); the free PeerJS cloud server only brokers the initial connection. No backend, no accounts. The host tab must stay open during a game.
